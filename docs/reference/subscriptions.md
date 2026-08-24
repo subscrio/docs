@@ -5,7 +5,9 @@ Subscriptions tie customers to plans and billing cycles, track lifecycle dates, 
 
 - Subscription keys are caller-supplied and immutable.
 - Billing cycles derive plan/product context; updating a subscription’s billing cycle also changes its plan.
-- Status is computed dynamically via the `subscription_status_view` database view, so status filters always reflect real time.
+- Status is computed on read. TypeScript uses `subscription_status_view`. .NET uses the same CASE order in `SubscriptionMapper.ComputeStatus`.
+
+TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
 
 ## Accessing the Service
 
@@ -115,7 +117,7 @@ Creates a subscription linking a customer to a plan/billing cycle and initialize
     | `currentPeriodEnd` | `string \| null` | ISO timestamp. |
     | `stripeSubscriptionId` | `string \| null` | Stripe subscription ID. |
     | `metadata` | `Record<string, unknown> \| null` | Metadata blob. |
-    | `customer` | `CustomerDto \| null` | Populated customer object. |
+    | `customer` | `CustomerDto \| null` | `null` on create, get, and get-by-customer. Populated on list and find. |
     | `createdAt` | `string` | ISO timestamp. |
     | `updatedAt` | `string` | ISO timestamp. |
 
@@ -177,7 +179,7 @@ Creates a subscription linking a customer to a plan/billing cycle and initialize
     | `CurrentPeriodEnd` | `string?` | ISO timestamp. |
     | `StripeSubscriptionId` | `string?` | Stripe subscription ID. |
     | `Metadata` | `Dictionary<string, object?>?` | Metadata blob. |
-    | `Customer` | `CustomerDto?` | Populated customer object. |
+    | `Customer` | `CustomerDto?` | `null` on create, get, and get-by-customer. Populated on list and find. |
     | `CreatedAt` | `string` | ISO timestamp. |
     | `UpdatedAt` | `string` | ISO timestamp. |
 
@@ -363,7 +365,7 @@ Retrieves a subscription by key, returning `null` when it does not exist.
 ### listSubscriptions
 
 #### Description
-Lists subscriptions using simple filters (customer/product/plan/status) with pagination.
+Lists subscriptions using simple filters. TypeScript resolves `customerKey` / `productKey` / `planKey` to IDs and applies them in SQL, along with status, archived, sort, and pagination. .NET validates and resolves those keys (unknown keys return an empty list) but then drops the resolved IDs. The .NET repository currently applies `Status`, `IsArchived`, `Limit`, and `Offset` only, and always orders by `CreatedAt` descending. Omit `limit` to return all matching rows.
 
 === "TypeScript"
     #### Signature
@@ -426,8 +428,8 @@ Lists subscriptions using simple filters (customer/product/plan/status) with pag
     | `IsArchived` | `bool?` | No | Filter by archived state. |
     | `SortBy` | `string?` | No | Sort field. |
     | `SortOrder` | `string?` | No | Sort direction. |
-    | `Limit` | `int?` | No | Page size (default 50). |
-    | `Offset` | `int?` | No | Skip count (default 0). |
+    | `Limit` | `int?` | No | Page size. No limit when omitted. |
+    | `Offset` | `int?` | No | Skip count. |
 
     #### Returns
     `Task<List<SubscriptionDto>>` – array of subscriptions matching filters.
@@ -460,7 +462,7 @@ Lists subscriptions using simple filters (customer/product/plan/status) with pag
 ### findSubscriptions
 
 #### Description
-Performs advanced filtering with date ranges, metadata queries, and feature override criteria.
+Performs advanced filtering. TypeScript applies customer/product/plan/billing-cycle keys, date ranges, `hasStripeId`, `hasTrial`, `hasFeatureOverrides`, status, archive, sort, and pagination. `featureKey`, `metadataKey`, and `metadataValue` are on the DTO and are not used. .NET validates filters and post-filters `HasFeatureOverrides`, but drops resolved keys and does not apply date, metadata, or Stripe/trial flags in SQL.
 
 === "TypeScript"
     #### Signature
@@ -1085,7 +1087,7 @@ Errors are captured in the report's `errors` array rather than thrown. Common er
     Fields optional: `billingCycleKey`, `expirationDate`, `cancellationDate`, `trialEndDate`, `currentPeriodStart`, `currentPeriodEnd`, `stripeSubscriptionId`, `metadata`. Activation date and customer key are immutable.
 
 === ".NET"
-    Properties optional: `BillingCycleKey`, `ExpirationDate`, `CancellationDate`, `TrialEndDate`, `CurrentPeriodStart`, `CurrentPeriodEnd`, `StripeSubscriptionId`, `Metadata`. Activation date and customer key are immutable.
+    Properties optional: `BillingCycleKey`, `ExpirationDate`, `CancellationDate`, `TrialEndDate`, `CurrentPeriodStart`, `CurrentPeriodEnd`, `StripeSubscriptionId`, `Metadata`. Activation date and customer key are immutable. Omitting `TrialEndDate` clears it because the record defaults the property to `null`. `StripeSubscriptionId` is accepted on the DTO and is not written.
 
 ### SubscriptionDto
 
@@ -1121,17 +1123,17 @@ Errors are captured in the report's `errors` array rather than thrown. Common er
     | `BillingCycleKey` | `string` | Yes | |
     | `Status` | `string` | Yes | `'pending'`, `'active'`, `'trial'`, `'cancelled'`, `'cancellation_pending'`, or `'expired'`. |
     | `IsArchived` | `bool` | Yes | Archive flag. |
-    | `ActivationDate` | `DateTime?` | No | |
-    | `ExpirationDate` | `DateTime?` | No | |
-    | `CancellationDate` | `DateTime?` | No | |
-    | `TrialEndDate` | `DateTime?` | No | |
-    | `CurrentPeriodStart` | `DateTime?` | No | |
-    | `CurrentPeriodEnd` | `DateTime?` | No | `null` when billing cycle duration is `forever`. |
+    | `ActivationDate` | `string?` | No | ISO timestamp. |
+    | `ExpirationDate` | `string?` | No | ISO timestamp. |
+    | `CancellationDate` | `string?` | No | ISO timestamp. |
+    | `TrialEndDate` | `string?` | No | ISO timestamp. |
+    | `CurrentPeriodStart` | `string?` | No | ISO timestamp. |
+    | `CurrentPeriodEnd` | `string?` | No | `null` when billing cycle duration is `forever`. |
     | `StripeSubscriptionId` | `string?` | No | |
     | `Metadata` | `Dictionary<string, object?>?` | No | |
-    | `Customer` | `CustomerDto?` | No | Full customer object from join (`listSubscriptions`, `findSubscriptions`). |
-    | `CreatedAt` | `DateTime` | Yes | ISO timestamp. |
-    | `UpdatedAt` | `DateTime` | Yes | ISO timestamp. |
+    | `Customer` | `CustomerDto?` | No | Full customer object from join (`ListSubscriptionsAsync`, `FindSubscriptionsAsync`). |
+    | `CreatedAt` | `string` | Yes | ISO timestamp. |
+    | `UpdatedAt` | `string` | Yes | ISO timestamp. |
 
 ### SubscriptionFilterDto
 
@@ -1145,8 +1147,8 @@ Errors are captured in the report's `errors` array rather than thrown. Common er
     | `isArchived` | `boolean` | No | `true` archived, `false` non-archived, `undefined` all. |
     | `sortBy` | `'activationDate' \| 'expirationDate' \| 'createdAt' \| 'updatedAt' \| 'currentPeriodStart' \| 'currentPeriodEnd'` | No | |
     | `sortOrder` | `'asc' \| 'desc'` | No | |
-    | `limit` | `number` | No | 1–100 (default 50). |
-    | `offset` | `number` | No | ≥0 (default 0). |
+    | `limit` | `number` | No | Schema default 50. `listSubscriptions` / `findSubscriptions` pass the caller value through, so omitted limit means no limit. |
+    | `offset` | `number` | No | ≥0 (default 0 in the schema). |
 
 === ".NET"
     | Property | Type | Required | Notes |
@@ -1156,10 +1158,10 @@ Errors are captured in the report's `errors` array rather than thrown. Common er
     | `PlanKey` | `string` | No | |
     | `Status` | `string` | No | Filters by computed status. |
     | `IsArchived` | `bool?` | No | `true` archived, `false` non-archived, `null` all. |
-    | `SortBy` | `SubscriptionSortBy` | No | |
-    | `SortOrder` | `SortOrder` | No | |
-    | `Limit` | `int` | No | 1–100 (default 50). |
-    | `Offset` | `int` | No | ≥0 (default 0). |
+    | `SortBy` | `string?` | No | Accepted; .NET repository currently ignores sort and orders by `CreatedAt` descending. |
+    | `SortOrder` | `string?` | No | Accepted; .NET repository currently ignores sort. |
+    | `Limit` | `int?` | No | No limit when omitted. |
+    | `Offset` | `int?` | No | ≥0. |
 
 ### DetailedSubscriptionFilterDto
 
@@ -1169,17 +1171,17 @@ Errors are captured in the report's `errors` array rather than thrown. Common er
     - `isArchived` – `true` archived, `false` non-archived, `undefined` all
     - Date ranges: `activationDateFrom/To`, `expirationDateFrom/To`, `trialEndDateFrom/To`, `currentPeriodStartFrom/To`, `currentPeriodEndFrom/To`
     - Booleans: `hasStripeId`, `hasTrial`, `hasFeatureOverrides`
-    - `featureKey`, `metadataKey`, `metadataValue`
+    - `featureKey`, `metadataKey`, `metadataValue` — accepted and unused
     - Pagination/sorting same as above.
 
 === ".NET"
     Extends `SubscriptionFilterDto` with:
     - `BillingCycleKey`
     - `IsArchived` – `true` archived, `false` non-archived, `null` all
-    - Date ranges: `ActivationDateFrom/To`, `ExpirationDateFrom/To`, `TrialEndDateFrom/To`, `CurrentPeriodStartFrom/To`, `CurrentPeriodEndFrom/To`
-    - Booleans: `HasStripeId`, `HasTrial`, `HasFeatureOverrides`
-    - `FeatureKey`, `MetadataKey`, `MetadataValue`
-    - Pagination/sorting same as above.
+    - Date ranges: `ActivationDateFrom/To`, `ExpirationDateFrom/To`, `TrialEndDateFrom/To`, `CurrentPeriodStartFrom/To`, `CurrentPeriodEndFrom/To` — accepted; not applied by the repository
+    - Booleans: `HasStripeId`, `HasTrial` — accepted; not applied. `HasFeatureOverrides` is applied after fetch
+    - `FeatureKey`, `MetadataKey`, `MetadataValue` — accepted and unused
+    - Pagination/sorting same as above. `FindSubscriptionsAsync` currently queries with status, archived, limit, and offset only.
 
 ## Related Workflows
 - `FeatureCheckerService` relies on subscription data for resolving feature access; keep overrides up to date.

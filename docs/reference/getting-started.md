@@ -22,7 +22,7 @@ This guide installs the library, defines a small entitlement catalog, assigns a 
     dotnet add package Subscrio.Core
     ```
 
-    Set `DATABASE_URL` and, when using SQL Server, set `DATABASE_TYPE=SqlServer`. You can also construct `SubscrioConfig` from your existing application configuration.
+    Set `DATABASE_URL` and, when using SQL Server, set `DATABASE_TYPE=sqlserver`. You can also construct `SubscrioConfig` from your existing application configuration.
 ## Step 1 – Initialize Subscrio
 
 === "TypeScript"
@@ -65,7 +65,9 @@ This guide installs the library, defines a small entitlement catalog, assigns a 
 
     ```csharp
     using Subscrio.Core;
+    using Subscrio.Core.Application.DTOs;
     using Subscrio.Core.Config;
+    using Subscrio.Core.Domain.ValueObjects;
 
     var config = ConfigLoader.LoadConfig();
     using var subscrio = new Subscrio(config);
@@ -94,7 +96,8 @@ This guide installs the library, defines a small entitlement catalog, assigns a 
     **Using dependency injection:** ASP.NET applications can register Subscrio once per request scope:
 
     ```csharp
-    using Subscrio.Core.DependencyInjection;  // and Subscrio.Core.Config for ConfigLoader
+    using Subscrio.Core.Config;
+    using Subscrio.Core.DependencyInjection;
 
     var config = ConfigLoader.LoadConfig();
     builder.Services.AddSubscrio(config, ServiceLifetime.Scoped);
@@ -111,7 +114,7 @@ When you update the Subscrio package, you may need to run migrations to update y
     const migrationsApplied = await subscrio.migrate();
     ```
 
-    Or via CLI: `npm run migrate` or `npx subscrio migrate`
+    Or via CLI after installing the package: `npx subscrio-migrate`
 
 === ".NET"
     ```csharp
@@ -291,11 +294,13 @@ Need a temporary override? For example, bump `max-projects` to `20` for a month:
 
 ===! "TypeScript"
     ```typescript
+    import { OverrideType } from 'subscrio';
+
     await subscrio.subscriptions.addFeatureOverride(
       subscription.key,
       FEATURE_KEYS.MaxProjects,
       '20',
-      'temporary'
+      OverrideType.Temporary
     );
     ```
 
@@ -315,11 +320,11 @@ Use the Feature Checker service to evaluate the final resolved values.
 
 === "TypeScript"
     ```typescript
-    const maxProjects = await subscrio.featureChecker.getValueForCustomer<number>(
+    const maxProjects = await subscrio.featureChecker.getValueForCustomer(
       customer.key,
       PRODUCT,
       FEATURE_KEYS.MaxProjects,
-      0
+      '0'
     );
 
     const hasAnalytics = await subscrio.featureChecker.isEnabledForCustomer(
@@ -349,14 +354,14 @@ Use the Feature Checker service to evaluate the final resolved values.
     Console.WriteLine($"Max projects: {maxProjects}, Has analytics: {hasAnalytics}");
     ```
 
-Results obey the hierarchy: subscription override → plan value → feature default.
+Results obey the hierarchy: subscription override → plan value → feature default. Resolved values are strings. The generic type parameter does not parse numbers or booleans.
 
 ## Where to Go Next
 
-- `core-overview.md` – service-by-service reference.
-- `products.md`, `plans.md`, `billing-cycles.md` – deeper dives on catalog modeling.
-- `subscriptions.md` & `subscription-lifecycle.md` – lifecycle rules.
-- `feature-checker.md` – advanced feature resolution scenarios.
-- `sample/` project – full demo covering trials, upgrades, overrides, and downgrades.
+- [Core Overview](core-overview.md) – constructor, schema, and service index.
+- [Products](products.md), [Plans](plans.md), [Billing Cycles](billing-cycles.md) – catalog modeling.
+- [Subscriptions](subscriptions.md) and [Subscription Lifecycle](subscription-lifecycle.md) – lifecycle rules.
+- [Feature Checker](feature-checker.md) – runtime resolution.
+- Sample apps in `core/typescript/sample` and `core/dotnet/sample` – trials, upgrades, overrides, and downgrades.
 
-Once these steps succeed end-to-end, you can expand into Stripe integration, API key management, admin UI, and automated migrations. Happy building!
+Once these steps succeed end-to-end, you can expand into Stripe integration, hooks, and configuration sync.

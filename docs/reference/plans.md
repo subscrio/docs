@@ -7,6 +7,8 @@ The Plan Management Service manages purchasable tiers within each product. It ha
 - Each plan belongs to exactly one product (`productKey`) and may define transition targets via `onExpireTransitionToBillingCycleKey`.
 - Deletion is only allowed when a plan is archived and unused by billing cycles or subscriptions.
 
+TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
+
 ## Accessing the Service
 
 === "TypeScript"
@@ -83,7 +85,7 @@ Validates payload, ensures the product exists, and persists a new plan with `act
     | Field | Type | Required | Description |
     | --- | --- | --- | --- |
     | `productKey` | `string` | Yes | Product that owns the plan. |
-    | `key` | `string` | Yes | Immutable plan key (1–255 chars). |
+    | `key` | `string` | Yes | Globally unique plan key. Lowercase letters, digits, and `-` only. |
     | `displayName` | `string` | Yes | 1–255 char label. |
     | `description` | `string` | No | ≤1000 characters. |
     | `onExpireTransitionToBillingCycleKey` | `string` | No | Optional billing cycle key for automatic transitions. |
@@ -145,7 +147,7 @@ Validates payload, ensures the product exists, and persists a new plan with `act
     ```
 
 #### Expected Results
-- Validates DTO via Zod schema.
+- Validates the DTO (Zod in TypeScript, FluentValidation in .NET).
 - Ensures product exists.
 - Rejects duplicate plan keys.
 - Persists plan with empty feature values array.
@@ -155,7 +157,7 @@ Validates payload, ensures the product exists, and persists a new plan with `act
 | Error | When |
 | --- | --- |
 | `ValidationError` | DTO invalid. |
-| `NotFoundError` | Product key not found. |
+| `NotFoundError` | Product key not found. In .NET, also thrown when `onExpireTransitionToBillingCycleKey` is set and that cycle does not exist. TypeScript stores the transition key without resolving the cycle. |
 | `ConflictError` | Plan key already exists. |
 
 ### updatePlan
@@ -238,7 +240,7 @@ Applies partial updates such as display name, description, transition target, or
 | Error | When |
 | --- | --- |
 | `ValidationError` | DTO invalid. |
-| `NotFoundError` | Plan key not found. |
+| `NotFoundError` | Plan key not found. In .NET, also thrown when `onExpireTransitionToBillingCycleKey` is set and that cycle does not exist. TypeScript stores the transition key without resolving the cycle. |
 
 ### getPlan
 
@@ -802,7 +804,7 @@ Retrieves the value a plan has stored for a specific feature.
 
 | Error | When |
 | --- | --- |
-| `NotFoundError` | Plan missing. |
+| `NotFoundError` | Plan missing. A missing feature returns `null`, not `NotFoundError`. |
 
 ### getPlanFeatures
 
@@ -872,7 +874,7 @@ Lists all feature overrides configured on a plan.
     | Field | Type | Required | Notes |
     | --- | --- | --- | --- |
     | `productKey` | `string` | Yes | Existing product key. |
-    | `key` | `string` | Yes | Unique plan identifier. |
+    | `key` | `string` | Yes | Globally unique. Lowercase letters, digits, and `-` only. |
     | `displayName` | `string` | Yes | 1–255 characters. |
     | `description` | `string` | No | ≤1000 characters. |
     | `onExpireTransitionToBillingCycleKey` | `string` | No | Billing cycle key for auto transition. |
@@ -882,14 +884,31 @@ Lists all feature overrides configured on a plan.
     | Property | Type | Required | Notes |
     | --- | --- | --- | --- |
     | `ProductKey` | `string` | Yes | Existing product key. |
-    | `Key` | `string` | Yes | Unique plan identifier. |
+    | `Key` | `string` | Yes | Globally unique. Lowercase letters, digits, and `-` only. |
     | `DisplayName` | `string` | Yes | 1–255 characters. |
     | `Description` | `string` | No | ≤1000 characters. |
     | `OnExpireTransitionToBillingCycleKey` | `string` | No | Billing cycle key for auto transition. |
     | `Metadata` | `Dictionary<string, object?>` | No | JSON-safe metadata. |
 
 ### UpdatePlanDto
-All `CreatePlanDto` fields become optional for updates.
+
+`key` and `productKey` are immutable and are not on this DTO.
+
+=== "TypeScript"
+    | Field | Type | Required | Notes |
+    | --- | --- | --- | --- |
+    | `displayName` | `string` | No | 1–255 characters. |
+    | `description` | `string` | No | ≤1000 characters. |
+    | `onExpireTransitionToBillingCycleKey` | `string` | No | Billing cycle key for auto transition. |
+    | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
+
+=== ".NET"
+    | Property | Type | Required | Notes |
+    | --- | --- | --- | --- |
+    | `DisplayName` | `string?` | No | 1–255 characters. |
+    | `Description` | `string?` | No | ≤1000 characters. |
+    | `OnExpireTransitionToBillingCycleKey` | `string?` | No | Billing cycle key for auto transition. |
+    | `Metadata` | `Dictionary<string, object?>?` | No | JSON-safe metadata. |
 
 ### PlanDto
 
@@ -928,7 +947,7 @@ All `CreatePlanDto` fields become optional for updates.
     | `status` | `'active' \| 'archived'` | Lifecycle filter. |
     | `search` | `string` | Text search. |
     | `sortBy` | `'displayName' \| 'createdAt'` | Sort column. |
-    | `sortOrder` | `'asc' \| 'desc'` | Sort direction. |
+    | `sortOrder` | `'asc' \| 'desc'` | Query default `asc` when omitted. |
     | `limit` | `number` | 1–100 (default 50). |
     | `offset` | `number` | ≥0 (default 0). |
 

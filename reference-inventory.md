@@ -16,16 +16,23 @@ Source of truth for documentation verification. Extracted from local `../core/ty
 
 | Page | Service / Class | Method Count | Doc Status |
 |------|-----------------|--------------|------------|
-| `subscriptions.md` | SubscriptionManagementService | 13 | ✓ Complete |
-| `products.md` | ProductManagementService | 9 | ✓ Complete |
-| `features.md` | FeatureManagementService | 8 | ✓ Complete |
-| `plans.md` | PlanManagementService | 12 | ✓ Complete |
-| `billing-cycles.md` | BillingCycleManagementService | 11 | ✓ Complete |
-| `customers.md` | CustomerManagementService | 7 | ✓ Complete |
-| `feature-checker.md` | FeatureCheckerService | 9 | ✓ Complete |
-| `config-sync.md` | ConfigSyncService | 2 | Pending |
-| `stripe-integration.md` | StripeIntegrationService | 3 | Pending |
-| `core-overview.md` | Subscrio (root) | 5 | ✓ Complete |
+| `index.md` | Welcome | — | ✓ Verified against source 2026-08-23 |
+| `getting-started.md` | Guide | — | ✓ Verified against source 2026-08-23 |
+| `core-overview.md` | Subscrio (root) | 6 | ✓ Verified against source 2026-08-23 |
+| `subscription-lifecycle.md` | Status view / ComputeStatus | — | ✓ Verified against source 2026-08-23 |
+| `subscriptions.md` | SubscriptionManagementService | 13 | ✓ Verified against source 2026-08-23 |
+| `products.md` | ProductManagementService | 9 | ✓ Verified against source 2026-08-23 |
+| `features.md` | FeatureManagementService | 8 | ✓ Verified against source 2026-08-23 |
+| `plans.md` | PlanManagementService | 12 | ✓ Verified against source 2026-08-23 |
+| `billing-cycles.md` | BillingCycleManagementService | 11 | ✓ Verified against source 2026-08-23 |
+| `customers.md` | CustomerManagementService | 7 | ✓ Verified against source 2026-08-23 |
+| `feature-checker.md` | FeatureCheckerService | 9 | ✓ Verified against source 2026-08-23 |
+| `hooks.md` | HookDispatcher | 28 events | ✓ Verified against source 2026-08-23 |
+| `how-to-extend.md` | payments + audit-log | — | ✓ Verified against source 2026-08-23 |
+| `config-sync.md` | ConfigSyncService | 2 | ✓ Verified against source 2026-08-23 |
+| `how-to-integrate-with-stripe.md` | Guide | — | ✓ Verified against source 2026-08-23 |
+| `stripe-integration.md` | StripeIntegrationService | 3 | ✓ Verified against source 2026-08-23 |
+| `relationships.md` | Model | — | ✓ Verified against source 2026-08-23 |
 
 ---
 
@@ -121,7 +128,7 @@ Source of truth for documentation verification. Extracted from local `../core/ty
 | 6 | `archiveBillingCycle(key)` | `ArchiveBillingCycleAsync(key)` | string | void |
 | 7 | `unarchiveBillingCycle(key)` | `UnarchiveBillingCycleAsync(key)` | string | void |
 | 8 | `deleteBillingCycle(key)` | `DeleteBillingCycleAsync(key)` | string | void |
-| 9 | `calculateNextPeriodEnd(billingCycleKey, fromDate?)` | `CalculateNextPeriodEndAsync(...)` | string, Date? | Date \| null |
+| 9 | `calculateNextPeriodEnd(billingCycleKey, currentPeriodEnd)` | `CalculateNextPeriodEndAsync(billingCycleKey, currentPeriodEnd)` | string, Date | Date \| null |
 | 10 | `getBillingCyclesByDurationUnit(durationUnit)` | `GetBillingCyclesByDurationUnitAsync(...)` | DurationUnit | BillingCycleDto[] |
 | 11 | `getDefaultBillingCycles()` | `GetDefaultBillingCyclesAsync()` | — | BillingCycleDto[] |
 

@@ -26,6 +26,8 @@ Subscrio derives the plan automatically by looking up `BillingCycle.externalProd
 
 === ".NET"
     ```csharp
+    using Subscrio.Core.Application.DTOs;
+
     await subscrio.BillingCycles.CreateBillingCycleAsync(new CreateBillingCycleDto(
         PlanKey: "basic-plan",
         Key: "basic-monthly",
@@ -105,7 +107,7 @@ Your HTTP endpoint must:
     import { Subscrio } from 'subscrio';
 
     const app = express();
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' });
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
     const subscrio = new Subscrio({ database: { connectionString: process.env.DATABASE_URL! } });
 
     app.post('/webhooks/stripe',
@@ -126,6 +128,9 @@ Your HTTP endpoint must:
 
 === ".NET (ASP.NET Core)"
     ```csharp
+    using Stripe;
+    using Subscrio.Core;
+
     app.MapPost("/webhooks/stripe", async (HttpContext context, Subscrio subscrio) =>
     {
         using var reader = new StreamReader(context.Request.Body);

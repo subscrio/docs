@@ -7,6 +7,8 @@ Billing cycles define how plans renew (duration, cadence, and external price IDs
 - Cycles can expose `externalProductId` (e.g., Stripe price) for payment processor mappings.
 - Delete operations require the cycle to be archived and unused by subscriptions or plan transition settings.
 
+TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
+
 ## Accessing the Service
 
 === "TypeScript"
@@ -120,8 +122,8 @@ Billing cycles define how plans renew (duration, cadence, and external price IDs
     | Field | Type | Description |
     | --- | --- | --- |
     | `key` | `string` | Cycle key. |
-    | `planKey` | `string` | Owning plan key. |
-    | `productKey` | `string` | Derived from plan. |
+    | `planKey` | `string \| null` | Owning plan key when resolved. |
+    | `productKey` | `string \| null` | Derived from plan when resolved. |
     | `displayName` | `string` | Display label. |
     | `description` | `string \| null` | Optional description. |
     | `status` | `string` | `active` or `archived`. |
@@ -135,8 +137,8 @@ Billing cycles define how plans renew (duration, cadence, and external price IDs
     | Property | Type | Description |
     | --- | --- | --- |
     | `Key` | `string` | Cycle key. |
-    | `PlanKey` | `string` | Owning plan key. |
-    | `ProductKey` | `string` | Derived from plan. |
+    | `PlanKey` | `string?` | Owning plan key when resolved. |
+    | `ProductKey` | `string?` | Derived from plan when resolved. |
     | `DisplayName` | `string` | Display label. |
     | `Description` | `string?` | Optional description. |
     | `Status` | `string` | `active` or `archived`. |
@@ -213,10 +215,26 @@ Billing cycles define how plans renew (duration, cadence, and external price IDs
 #### Input Properties
 
 === "TypeScript"
-    All fields mirror `CreateBillingCycleDto` but are optional. If `durationUnit` is set to `forever`, `durationValue` must be omitted.
+    | Field | Type | Required | Description |
+    | --- | --- | --- | --- |
+    | `displayName` | `string` | No | 1–255 char label. |
+    | `description` | `string` | No | ≤1000 chars. |
+    | `durationValue` | `number` | No | Required unless `durationUnit` is `forever`. |
+    | `durationUnit` | `'days' \| 'weeks' \| 'months' \| 'years' \| 'forever'` | No | Renewal cadence. |
+    | `externalProductId` | `string` | No | Stripe price or other external ID. |
+
+    `planKey` and `key` are immutable and are not on this DTO.
 
 === ".NET"
-    All properties mirror `CreateBillingCycleDto` but are optional. If `DurationUnit` is set to `forever`, `DurationValue` must be omitted.
+    | Property | Type | Required | Description |
+    | --- | --- | --- | --- |
+    | `DisplayName` | `string?` | No | 1–255 char label. |
+    | `Description` | `string?` | No | ≤1000 chars. |
+    | `DurationValue` | `int?` | No | Required unless `DurationUnit` is `forever`. |
+    | `DurationUnit` | `string?` | No | `days`, `weeks`, `months`, `years`, or `forever`. |
+    | `ExternalProductId` | `string?` | No | Stripe price or other external ID. |
+
+    `PlanKey` and `Key` are immutable and are not on this DTO.
 
 #### Returns
 
@@ -419,7 +437,7 @@ Billing cycles define how plans renew (duration, cadence, and external price IDs
     | `limit` | `number` | 1–100 (default 50). |
     | `offset` | `number` | ≥0 (default 0). |
     | `sortBy` | `'displayName'` or `'createdAt'` | Sort column. |
-    | `sortOrder` | `'asc'` or `'desc'` | Sort direction, default `'asc'`. |
+    | `sortOrder` | `'asc'` or `'desc'` | Query default `asc` when omitted. |
 
 === ".NET"
     | Property | Type | Description |
@@ -430,8 +448,8 @@ Billing cycles define how plans renew (duration, cadence, and external price IDs
     | `Search` | `string` | Text search across key/display name. |
     | `Limit` | `int` | 1–100 (default 50). |
     | `Offset` | `int` | ≥0 (default 0). |
-    | `SortBy` | `BillingCycleSortBy` | Sort column. |
-    | `SortOrder` | `SortOrder` | Sort direction, default `asc`. |
+    | `SortBy` | `string?` | `displayName` or `createdAt`. |
+    | `SortOrder` | `string?` | `asc` or `desc`. Query default `asc` when omitted. |
 
 #### Returns
 
@@ -451,7 +469,8 @@ Billing cycles define how plans renew (duration, cadence, and external price IDs
 
 #### Expected Results
 - Validates filters.
-- Executes query, returning DTO array (same schema as `createBillingCycle` result).
+- When `planKey` is set, both languages load that plan's cycles and ignore the other filters (no pagination, status, search, or sort).
+- Otherwise executes the filtered query and returns DTO array.
 
 #### Potential Errors
 
@@ -776,6 +795,7 @@ Billing cycles define how plans renew (duration, cadence, and external price IDs
 
 #### Expected Results
 - Filters existing cycles by unit (no errors thrown).
+- TypeScript leaves `planKey` / `productKey` null. .NET resolves and fills those keys.
 
 #### Example
 
@@ -823,7 +843,8 @@ Billing cycles define how plans renew (duration, cadence, and external price IDs
     - `List<BillingCycleDto>` of defaults that were seeded (or empty).
 
 #### Expected Results
-- Attempts to load keys such as `monthly`, `quarterly`, `yearly`; returns whichever exist.
+- Looks up the hardcoded keys `monthly`, `quarterly`, and `yearly` and returns whichever exist.
+- TypeScript maps with `toDto(cycle)` and leaves `planKey` / `productKey` null. .NET resolves and fills those keys.
 
 #### Potential Errors
 - None (returns empty array when defaults not installed).

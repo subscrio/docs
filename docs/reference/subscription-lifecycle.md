@@ -1,40 +1,40 @@
 # Subscription Lifecycle Reference
 
-This guide explains every subscription status exposed by `SubscriptionDto.status`, the exact calculation rules, and how statuses can flow over time. These rules are enforced inside the `Subscription` domain entity, so every fetch reflects the latest lifecycle state without requiring callers to run manual cron jobs or SQL scripts.
+This guide explains every subscription status exposed by `SubscriptionDto.status`, the exact calculation rules, and how statuses can flow over time. Status is computed on read. TypeScript uses the `subscrio.subscription_status_view` SQL view. .NET uses the same CASE order in `SubscriptionMapper.ComputeStatus`. There is no `suspended` subscription status. `Suspended` exists only on `CustomerStatus`.
 
 ## Calculation Order
 
-Statuses are evaluated in a strict priority order. The first rule that matches wins:
+Statuses are evaluated in this order. The first matching rule wins:
 
-1. `cancelled`
-2. `expired`
-3. `trial`
-4. `cancellation_pending`
-5. `suspended`
-6. `active`
-7. `pending` (fallback when activation has not happened yet)
+1. `cancellation_pending` — `cancellationDate` is set and is in the future
+2. `cancelled` — `cancellationDate` is set and is now or in the past
+3. `expired` — `expirationDate` is set and is now or in the past
+4. `pending` — `activationDate` is set and is in the future
+5. `trial` — `trialEndDate` is set and is in the future
+6. `active` — default when none of the rules above match
 
-If two conditions could apply simultaneously, whichever appears earlier in the list takes precedence.
+A missing `activationDate` does not produce `pending`. Create defaults `activationDate` to now unless you pass one. If you later clear it, the remaining rules decide the status (`trial` or `active`).
+
+Any set `cancellationDate` wins before expiration, trial, or activation.
 
 ## Status Definitions
 
 | Status | How it is calculated | Typical usage |
 | --- | --- | --- |
-| `pending` | Subscription exists but `activationDate` is missing or in the future. None of the other rules match yet. | Pre-provisioned subscriptions waiting for onboarding or payment confirmation. |
-| `active` | Default state once `activationDate` is in the past and there are no cancellations, expirations, suspensions, or trials in play. | Normal billing periods after trial completion. |
-| `trial` | `trialEndDate` exists and is greater than the current time. Overrides `active` as long as the trial is ongoing. | Limited-time access before billing starts. |
-| `cancellation_pending` | `cancellationDate` is set (indicating the subscriber asked to cancel) but the current period end or cancellation date is still in the future. | Grace period between a cancellation request and the final cut-off. |
-| `cancelled` | `cancellationDate` exists and is in the past (or equals now). Indicates the subscription has fully ended due to cancellation. | Final state after the cancellation effective date passes. |
-| `expired` | `expirationDate` exists and is in the past, **and** there is no cancellation. Used for time-bound subscriptions that simply reach their expiration. | Fixed-term offers or promotional subscriptions that lapse automatically. |
-| `suspended` | Subscription has been explicitly suspended via `suspend()` (e.g., payment failure or manual enforcement). This state only applies when none of the higher-priority rules match. | Temporary service pause until the issue is resolved. |
+| `cancellation_pending` | `cancellationDate` is set and is in the future. | Grace period after a cancel request. |
+| `cancelled` | `cancellationDate` is set and is now or in the past. | Final state after the cancellation date. |
+| `expired` | No cancellation, and `expirationDate` is now or in the past. | Fixed-term or trial-to-expire subscriptions. |
+| `pending` | No cancellation or expiration, and `activationDate` is in the future. | Pre-dated activation. |
+| `trial` | None of the above, and `trialEndDate` is in the future. | Limited-time access before paid billing. |
+| `active` | None of the above. | Normal paid access. |
 
-> **Important `cancellation_pending` and `cancelled` always win over `trial`, `active`, and `pending`. This ensures cancellation intent is honored regardless of trial or activation timing.
+> Cancellation always wins over trial, active, pending, and expired. A future `cancellationDate` is `cancellation_pending` even if the trial is still running.
 
 ## Status Flow Diagram
 
 ```mermaid
 flowchart LR
-    Pending["pending\n(no activation yet)"] -->|activationDate reached| Trial
+    Pending["pending\n(activationDate in future)"] -->|activationDate reached| Trial
     Pending -->|activationDate reached| Active
     Trial["trial\n(trialEndDate in future)"] -->|trialEndDate passed| Active
     Active -->|set cancellationDate in future| CancelPending
@@ -122,6 +122,7 @@ This is the standard flow for paid subscriptions with a trial period. When the t
       customerKey: 'customer-123',
       billingCycleKey: 'pro-monthly',
       trialEndDate: trialEndDate.toISOString(),
+      currentPeriodStart: trialEndDate.toISOString(),
       // expirationDate is NOT set - billing will start after trial
     });
     ```
@@ -136,7 +137,8 @@ This is the standard flow for paid subscriptions with a trial period. When the t
         Key: "customer-123-pro-subscription",
         CustomerKey: "customer-123",
         BillingCycleKey: "pro-monthly",
-        TrialEndDate: trialEndDate
+        TrialEndDate: trialEndDate,
+        CurrentPeriodStart: trialEndDate
         // ExpirationDate is NOT set - billing will start after trial
     ));
     ```
@@ -257,8 +259,8 @@ First, configure the paid plan to transition to a free plan when subscriptions e
     {
       trialEndDate: "2025-02-03T00:00:00Z",      // 14 days from now
       expirationDate: "2025-02-03T00:00:00Z",    // Same as trialEndDate
-      currentPeriodStart: "2025-02-03T00:00:00Z", // Would start billing here, but expires instead
-      currentPeriodEnd: "2025-03-03T00:00:00Z",
+      currentPeriodStart: "<now unless you pass currentPeriodStart>",
+      currentPeriodEnd: "<currentPeriodStart + billing cycle>",
       status: "trial"                             // trialEndDate > NOW()
     }
     ```
@@ -366,8 +368,8 @@ Use this when you want customers to lose access completely after the trial ends,
     {
       trialEndDate: "2025-01-27T00:00:00Z",      // 7 days from now
       expirationDate: "2025-01-27T00:00:00Z",    // Same as trialEndDate
-      currentPeriodStart: "2025-01-27T00:00:00Z",
-      currentPeriodEnd: "2025-02-27T00:00:00Z",
+      currentPeriodStart: "<now unless you pass currentPeriodStart>",
+      currentPeriodEnd: "<currentPeriodStart + billing cycle>",
       status: "trial"                             // trialEndDate > NOW()
     }
     ```
@@ -399,21 +401,21 @@ The customer loses access. The subscription remains in the database as `expired`
 
 ### Important Notes
 
-1. **`currentPeriodStart` Best Practice**: When `trialEndDate` is provided, set `currentPeriodStart` equal to `trialEndDate` so the billing period begins when the trial ends. If you don't explicitly set `currentPeriodStart`, Subscrio will calculate it based on the billing cycle, but explicitly setting it to `trialEndDate` makes the intent clear.
+1. **`currentPeriodStart`**: If omitted, create sets it to now, not to `trialEndDate`. Set `currentPeriodStart` to `trialEndDate` when you want the first billed period to start when the trial ends.
 
-2. **Billing System Integration**: When integrating with external billing systems (like Stripe), the billing system will typically reset all dates when a customer purchases during trial. In this case, you should update the subscription with the dates provided by the billing system webhook.
+2. **Billing System Integration**: When integrating with Stripe, webhooks typically reset period dates after purchase. Update the subscription with the dates from the event.
 
-3. **Running Transitions**: For Scenario B (migrate to free plan), you must periodically call `transitionExpiredSubscriptions()` / `TransitionExpiredSubscriptionsAsync()` to process expired subscriptions. This is typically done via a cron job or scheduled task.
+3. **Running Transitions**: For Scenario B, periodically call `transitionExpiredSubscriptions()` / `TransitionExpiredSubscriptionsAsync()`.
 
-4. **Status Priority**: Remember that `expired` status (priority 2) takes precedence over `trial` status (priority 3). If both `trialEndDate` and `expirationDate` are set to the same future date, the subscription will be `trial` until that date, then immediately become `expired`.
+4. **Status Priority**: `expired` is evaluated before `trial`. If both `trialEndDate` and `expirationDate` are the same future date, the status is `trial` until that instant, then `expired`.
 
-5. **Explicit vs Calculated Dates**: You can either explicitly set `currentPeriodStart` and `currentPeriodEnd`, or let Subscrio calculate them. If you set `trialEndDate` but don't set `currentPeriodStart`, Subscrio will use `now()` as the start, which may not be what you want. **Recommendation**: Always explicitly set `currentPeriodStart` to `trialEndDate` when creating trial subscriptions.
+5. **Explicit vs Calculated Dates**: If you omit `currentPeriodEnd`, Subscrio calculates it from `currentPeriodStart` plus the billing cycle duration. Forever cycles produce a null period end.
 
 ## Practical Tips
 
 - Setting `trialEndDate` automatically enters `trial` until the timestamp is reached. Remove or backdate the field to exit trial immediately.
 - To stage a future cancellation, set `cancellationDate` to the end of the current period. The subscription becomes `cancellation_pending` until the date passes.
 - Removing `cancellationDate` (e.g., a customer rescinds cancellation) returns the subscription to `active` or `trial`, depending on other fields.
-- `suspended` is only set via explicit service calls (e.g., billing failure automation). Once you call `resume()`, the entity recomputes to whichever status applies next (`active`, `trial`, etc.).
+- There is no subscription `suspend()` or `resume()`. Customer `suspended` is a customer status, not a subscription status.
 
-Refer back to `subscriptions.md` for lifecycle-related APIs (`archiveSubscription`, `unarchiveSubscription`, `clearTemporaryOverrides`, etc.), and to `feature-checker.md` for how these statuses affect runtime feature access.
+Refer back to [Subscriptions](subscriptions.md) for lifecycle-related APIs (`archiveSubscription`, `unarchiveSubscription`, `clearTemporaryOverrides`, `transitionExpiredSubscriptions`), and to [Feature Checker](feature-checker.md) for how these statuses affect runtime feature access.

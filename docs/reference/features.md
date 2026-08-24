@@ -7,6 +7,8 @@ The Feature Management Service defines entitlement toggles and typed values that
 - `valueType` determines how defaults, plan values, and overrides are validated (`toggle`, `numeric`, `text`).
 - Features cannot be deleted while referenced by products, plan feature values, or subscription overrides.
 
+TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
+
 ## Accessing the Service
 
 === "TypeScript"
@@ -74,7 +76,7 @@ Creates a new feature, validating keys, default values, and optional metadata be
 
     | Field | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `key` | `string` | Yes | 1–255 chars, lowercase alphanumeric plus `-`. |
+    | `key` | `string` | Yes | 1–255 chars, letters, digits, `-`, and `_`. |
     | `displayName` | `string` | Yes | 1–255 char label. |
     | `description` | `string` | No | ≤1000 chars. |
     | `valueType` | `'toggle' \| 'numeric' \| 'text'` | Yes | Controls validation rules. |
@@ -112,7 +114,7 @@ Creates a new feature, validating keys, default values, and optional metadata be
 
     | Property | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `Key` | `string` | Yes | 1–255 chars, lowercase alphanumeric plus `-`. |
+    | `Key` | `string` | Yes | 1–255 chars, letters, digits, `-`, and `_`. |
     | `DisplayName` | `string` | Yes | 1–255 char label. |
     | `Description` | `string` | No | ≤1000 chars. |
     | `ValueType` | `string` | Yes | `toggle`, `numeric`, or `text`. |
@@ -541,12 +543,12 @@ Returns all features currently associated with a product.
 
 ## DTO Reference
 
-### CreateFeatureDto / UpdateFeatureDto
+### CreateFeatureDto
 
 === "TypeScript"
     | Field | Type | Required | Constraints |
     | --- | --- | --- | --- |
-    | `key` | `string` | Yes | 1–255 chars, lowercase alphanumeric plus `-`. |
+    | `key` | `string` | Yes | 1–255 chars, letters, digits, `-`, and `_`. |
     | `displayName` | `string` | Yes | 1–255 chars. |
     | `description` | `string` | No | ≤1000 chars. |
     | `valueType` | `'toggle' \| 'numeric' \| 'text'` | Yes | Determines validation rules. |
@@ -555,12 +557,10 @@ Returns all features currently associated with a product.
     | `validator` | `Record<string, unknown>` | No | Custom validation metadata. |
     | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
 
-    *UpdateFeatureDto*: Same fields, all optional; `valueType` and `defaultValue` must remain compatible when both provided.
-
 === ".NET"
     | Property | Type | Required | Constraints |
     | --- | --- | --- | --- |
-    | `Key` | `string` | Yes | 1–255 chars, lowercase alphanumeric plus `-`. |
+    | `Key` | `string` | Yes | 1–255 chars, letters, digits, `-`, and `_`. |
     | `DisplayName` | `string` | Yes | 1–255 chars. |
     | `Description` | `string` | No | ≤1000 chars. |
     | `ValueType` | `string` | Yes | `toggle`, `numeric`, or `text`. |
@@ -569,7 +569,31 @@ Returns all features currently associated with a product.
     | `Validator` | `Dictionary<string, object?>` | No | Custom validation metadata. |
     | `Metadata` | `Dictionary<string, object?>` | No | JSON-safe metadata. |
 
-    *UpdateFeatureDto*: Same fields, all optional.
+### UpdateFeatureDto
+
+`key` is immutable and is not on this DTO. `valueType` is accepted by the schema/validator and is **not written**. A new `defaultValue` is validated against the existing feature type.
+
+=== "TypeScript"
+    | Field | Type | Required | Constraints |
+    | --- | --- | --- | --- |
+    | `displayName` | `string` | No | 1–255 chars. |
+    | `description` | `string` | No | ≤1000 chars. |
+    | `valueType` | `'toggle' \| 'numeric' \| 'text'` | No | Accepted and ignored. |
+    | `defaultValue` | `string` | No | Must match the existing feature type. |
+    | `groupName` | `string` | No | ≤255 chars. |
+    | `validator` | `Record<string, unknown>` | No | Custom validation metadata. |
+    | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
+
+=== ".NET"
+    | Property | Type | Required | Constraints |
+    | --- | --- | --- | --- |
+    | `DisplayName` | `string?` | No | 1–255 chars. |
+    | `Description` | `string?` | No | ≤1000 chars. |
+    | `ValueType` | `string?` | No | Accepted and ignored. |
+    | `DefaultValue` | `string?` | No | Must match the existing feature type. |
+    | `GroupName` | `string?` | No | ≤255 chars. |
+    | `Validator` | `Dictionary<string, object?>?` | No | Custom validation metadata. |
+    | `Metadata` | `Dictionary<string, object?>?` | No | JSON-safe metadata. |
 
 ### FeatureDto
 
@@ -615,7 +639,7 @@ Returns all features currently associated with a product.
     | `limit` | `number` | 1–100 (default 50). |
     | `offset` | `number` | ≥0 (default 0). |
     | `sortBy` | `'displayName' \| 'createdAt'` | Sort column. |
-    | `sortOrder` | `'asc' \| 'desc'` | Sort direction. |
+    | `sortOrder` | `'asc' \| 'desc'` | Query default `asc` when omitted. |
 
 === ".NET"
     | Property | Type | Description |
@@ -627,9 +651,9 @@ Returns all features currently associated with a product.
     | `Limit` | `int` | 1–100 (default 50). |
     | `Offset` | `int` | ≥0 (default 0). |
     | `SortBy` | `string` | `displayName` or `createdAt`. |
-    | `SortOrder` | `string` | `asc` or `desc`; default `asc`. |
+    | `SortOrder` | `string?` | `asc` or `desc`. Query default `asc` when omitted. |
 
 ## Related Workflows
-- Products must associate features before plans can set values (`ProductManagementService.associateFeature`).
+- Associate features with a product (`ProductManagementService.associateFeature`) so the catalog is complete. `setFeatureValue` only requires the plan and feature to exist.
 - Plan-level values (`PlanManagementService.setFeatureValue`) override defaults but are superseded by subscription overrides.
 - Subscription overrides (`SubscriptionManagementService.addFeatureOverride`) take precedence in the feature resolution hierarchy enforced by `FeatureCheckerService`.

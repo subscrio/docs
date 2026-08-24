@@ -5,7 +5,9 @@ Customers represent your end users or tenant accounts. This service manages crea
 
 - Customer keys are provided by your system and immutable once stored.
 - `externalBillingId` is optional but must remain unique when present.
-- Delete operations require the customer to be archived and pass entity `canDelete()` checks.
+- Delete operations require the customer to be archived. `canDelete()` is archive-only; subscriptions are not checked.
+
+TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
 
 ## Accessing the Service
 
@@ -332,20 +334,20 @@ Customers represent your end users or tenant accounts. This service manages crea
 === "TypeScript"
     | Field | Type | Description |
     | --- | --- | --- |
-    | `status` | `'active' \| 'archived' \| 'suspended'` | Filter by lifecycle (default all). |
+    | `status` | `'active' \| 'archived' \| 'suspended' \| 'deleted'` | Filter by stored status. This service writes `active` and `archived` only. |
     | `search` | `string` | Matches key, displayName, or email. |
-    | `sortBy` | `'displayName' \| 'key' \| 'createdAt'` | Sort column. |
-    | `sortOrder` | `'asc' \| 'desc'` | Sort direction, default `'asc'`. |
+    | `sortBy` | `'displayName' \| 'key' \| 'createdAt'` | Sort column. Default `createdAt`. |
+    | `sortOrder` | `'asc' \| 'desc'` | Query default `desc` when omitted. |
     | `limit` | `number` | 1–100 (default 50). |
     | `offset` | `number` | ≥0 (default 0). |
 
 === ".NET"
     | Property | Type | Description |
     | --- | --- | --- |
-    | `Status` | `string` | Filter by lifecycle: `active`, `archived`, `suspended`. |
-    | `Search` | `string` | Matches key, display name, or email. |
-    | `SortBy` | `CustomerSortBy` | Sort column. |
-    | `SortOrder` | `SortOrder` | Sort direction, default `asc`. |
+    | `Status` | `string?` | `active`, `archived`, `suspended`, or `deleted`. This service writes `active` and `archived` only. |
+    | `Search` | `string?` | Matches key, display name, or email. |
+    | `SortBy` | `string?` | `displayName`, `key`, or `createdAt`. Default `createdAt`. |
+    | `SortOrder` | `string?` | `asc` or `desc`. Query default `desc` when omitted. |
     | `Limit` | `int` | 1–100 (default 50). |
     | `Offset` | `int` | ≥0 (default 0). |
 
@@ -530,15 +532,15 @@ Customers represent your end users or tenant accounts. This service manages crea
     `Task`
 
 #### Expected Results
-- Loads customer, ensures `customer.canDelete()` (must be archived and free of blocking relationships).
-- Deletes record via repository.
+- Loads customer and requires archived status (`canDelete()`).
+- Deletes the record. Subscriptions are not checked.
 
 #### Potential Errors
 
 | Error | When |
 | --- | --- |
 | `NotFoundError` | Customer missing. |
-| `DomainError` | Customer cannot be deleted (still active or domain rule failed). |
+| `ValidationError` | Customer is not archived. |
 
 #### Example
 

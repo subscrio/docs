@@ -22,7 +22,7 @@ This reference explains how the core domain objects relate to each other, plus t
 - **Subscription → Plan (many-to-one)**  
   Subscriptions reference the billing cycle, which derives the plan/product relationship. Subscriptions can optionally override feature values on top of the plan defaults.
 
-See the dedicated service docs for CRUD and DTO details: `products.md`, `plans.md`, `features.md`, `billing-cycles.md`, and `subscriptions.md`.
+See the dedicated service docs: [Products](products.md), [Plans](plans.md), [Features](features.md), [Billing Cycles](billing-cycles.md), and [Subscriptions](subscriptions.md).
 
 ## Feature Resolution Hierarchy
 
@@ -32,12 +32,12 @@ When calling `FeatureCheckerService`, values always resolve in this order:
 2. **Plan value** – The plan’s configured feature value.
 3. **Feature default** – The default defined on the feature itself.
 
-If a subscription has multiple overrides for the same feature, the latest write replaces the prior value. When a customer holds multiple subscriptions, any subscription with an override wins; otherwise the first plan that supplies a value is used before falling back to the feature default. Refer to `feature-checker.md` for API-level guidance.
+A feature has at most one override per subscription; a later write replaces the stored value. When a customer holds multiple subscriptions for the same product, the first override in repository fetch order wins. If no override exists, the first resolved plan or default value is used. See [Feature Checker](feature-checker.md).
 
 ## Customer Keys
 
 - Always pass **your application’s customer identifier** as `customerKey`. Subscrio never generates or mutates this value.
-- Feature checker queries accept `customerKey` (not the internal UUID) so you can resolve features without fetching the customer record first.
+- Feature checker queries accept `customerKey` (not the internal numeric id) so you can resolve features without fetching the customer record first.
 - Customer management methods (`customers.md`) use `key` consistently across create/update/list APIs.
 
 Maintaining consistent customer keys ensures migrations and feature checks remain predictable when you sync data from your source-of-truth system.

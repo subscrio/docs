@@ -152,5 +152,5 @@ nav:
   - How to Extend: reference/how-to-extend.md
   - Configuration Sync: reference/config-sync.md
   - How to Integrate with Stripe: reference/how-to-integrate-with-stripe.md
-  - Feature Checker: reference/feature-checker.md            
+  - Feature Checker: reference/feature-checker.md
   - Relationships: reference/relationships.md

@@ -255,6 +255,8 @@ Event names use the pattern `{resource}.{action}.{before\|after}`.
 
 === ".NET"
     ```csharp
+    using Stripe;
+
     public class StripeReceivedHookEvent
     {
         public required string Type { get; init; }

@@ -79,19 +79,19 @@ Reference for the shared entitlement model and public services exposed by the `s
 
 | Name | Type | Required | Description |
 | --- | --- | --- | --- |
-| `config` | [`SubscrioConfig`](#configuration-object) | Yes | Database connection plus optional passphrase, Stripe, and logging overrides. |
+| `config` | [`SubscrioConfig`](#configuration-object) | Yes | Database connection plus optional passphrase, Stripe, logging, hooks, and initial config. |
 
 #### Input Properties
 
-- [`SubscrioConfig`](#configuration-object) – high-level shape that includes the `database`, `stripe`, and `logging` objects defined later in this page.
+- [`SubscrioConfig`](#configuration-object) – high-level shape that includes the `database`, `stripe`, `logging`, `hooks`, and `initialConfig` objects defined later in this page.
 
 #### Returns
 
 === "TypeScript"
-    Creates a new `Subscrio` instance that exposes the services listed in the “Public Services” table above.
+    Creates a new `Subscrio` instance that exposes the services listed in the [Service Reference Index](#service-reference-index).
 
 === ".NET"
-    Creates a new `Subscrio` instance that exposes the services listed in the "Public Services" table above.
+    Creates a new `Subscrio` instance that exposes the services listed in the [Service Reference Index](#service-reference-index).
 
 #### Return Properties
 
@@ -103,7 +103,8 @@ Reference for the shared entitlement model and public services exposed by the `s
 
 #### Expected Results
 
-- Initializes a Postgres database connection using `config.database`.
+- TypeScript opens a PostgreSQL connection using `config.database`.
+- .NET opens PostgreSQL or SQL Server using `config.Database`, including `DatabaseType` (default `PostgreSQL`).
 - Constructs repository instances and wires each service with its dependencies.
 - Keeps a shared schema installer for schema management helpers.
 
@@ -111,7 +112,7 @@ Reference for the shared entitlement model and public services exposed by the `s
 
 | Error | When |
 | --- | --- |
-| `ConfigurationError` | Thrown downstream if `config` is invalid or a database connection cannot be established. |
+| `Error` / `ApplicationException` | Thrown if required config such as `DATABASE_URL` is missing when using `loadConfig()` / `ConfigLoader.LoadConfig()`. Construction itself does not throw `ConfigurationError`. |
 
 #### Example
 
@@ -150,6 +151,7 @@ Reference for the shared entitlement model and public services exposed by the `s
       stripe?: { secretKey: string };
       logging?: { level: 'debug' | 'info' | 'warn' | 'error' };
       initialConfig?: InitialConfigSync;  // { type: 'file', filePath: string } | { type: 'json', config: ConfigSyncDto }
+      hooks?: HooksConfig;
     }
     ```
 
@@ -164,6 +166,7 @@ Reference for the shared entitlement model and public services exposed by the `s
         public StripeConfig? Stripe { get; init; }
         public LoggingConfig? Logging { get; init; }
         public InitialConfigOptions? InitialConfig { get; init; }  // FilePath and/or Config for config sync
+        public SubscrioHooksOptions? Hooks { get; init; }
     }
 
     public class DatabaseConfig
@@ -171,6 +174,7 @@ Reference for the shared entitlement model and public services exposed by the `s
         public required string ConnectionString { get; init; }
         public bool Ssl { get; init; }
         public int PoolSize { get; init; } = 10;
+        public DatabaseType DatabaseType { get; init; } = DatabaseType.PostgreSQL;
     }
     ```
 
@@ -186,9 +190,10 @@ Reference for the shared entitlement model and public services exposed by the `s
 === ".NET"
     | Property | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `ConnectionString` | `string` | Yes | Full Postgres connection string. |
+    | `ConnectionString` | `string` | Yes | PostgreSQL or SQL Server connection string. |
     | `Ssl` | `bool` | No | Forces SSL when running outside trusted networks. |
     | `PoolSize` | `int` | No | Custom pool size; defaults to 10. |
+    | `DatabaseType` | `DatabaseType` | No | `PostgreSQL` (default) or `SqlServer`. |
 
 ##### `adminPassphrase`
 
@@ -203,12 +208,12 @@ Optional config sync input (same as used by [ConfigSyncService](config-sync.md))
 === "TypeScript"
     | Field | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `secretKey` | `string` | Yes | Private Stripe secret used by helpers like `createStripeSubscription`. |
+    | `secretKey` | `string` | Yes | Private Stripe secret used by `createCheckoutSession` and by your webhook endpoint when creating a Stripe client. `createStripeSubscription` does not call Stripe. |
 
 === ".NET"
     | Property | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `SecretKey` | `string` | Yes | Private Stripe secret used by helpers like `CreateStripeSubscriptionAsync`. |
+    | `SecretKey` | `string` | Yes | Private Stripe secret used by `CreateCheckoutSessionAsync` and by your webhook endpoint when creating a Stripe client. `CreateStripeSubscriptionAsync` does not call Stripe. |
 
 ##### `logging` object
 
@@ -220,7 +225,7 @@ Optional config sync input (same as used by [ConfigSyncService](config-sync.md))
 === ".NET"
     | Property | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `Level` | `string` | Yes | `"debug"`, `"info"`, `"warn"`, or `"error"` – sets global log verbosity. |
+    | `Level` | `LogLevel` | No | `Debug`, `Info` (default), `Warn`, or `Error`. |
 
 ### installSchema
 
@@ -357,7 +362,7 @@ Runs pending database migrations to update the schema to the latest version. Mig
     }
     ```
 
-    Or via CLI: `npm run migrate` or `npx subscrio migrate`
+    Or via CLI after installing the package: `npx subscrio-migrate`
 
 === ".NET"
     ```csharp
@@ -555,7 +560,7 @@ Runs pending database migrations to update the schema to the latest version. Mig
     `Promise<void>` – resolves after all connections are closed.
 
 === ".NET"
-    `void` – `Dispose()` is synchronous; use `await using` for proper cleanup.
+    `void` – `Dispose()` is synchronous. Use `using var subscrio = new Subscrio(config);` or call `Dispose()` when finished.
 
 #### Return Properties
 
@@ -585,7 +590,7 @@ Runs pending database migrations to update the schema to the latest version. Mig
 === ".NET"
     ```csharp
     subscrio.Dispose();
-    // Or use: await using var subscrio = new Subscrio(config);
+    // Or: using var subscrio = new Subscrio(config);
     ```
 
 ---
@@ -603,7 +608,8 @@ All service-level documentation now lives in dedicated markdown files so each me
 | CustomerManagementService | Customer lifecycle | [`customers.md`](./customers.md) |
 | SubscriptionManagementService | Subscriptions, overrides, batch jobs | [`subscriptions.md`](./subscriptions.md) |
 | FeatureCheckerService | Runtime feature resolution APIs | [`feature-checker.md`](./feature-checker.md) |
-| StripeIntegrationService | Stripe webhook processing & helpers | [`stripe-integration.md`](./stripe-integration.md) |
+| ConfigSyncService | Catalog sync from JSON file or `ConfigSyncDto` | [`config-sync.md`](./config-sync.md) |
+| StripeIntegrationService | Stripe webhook processing & checkout helpers | [`stripe-integration.md`](./stripe-integration.md) |
 | Hooks | Before/after customer/subscription hooks + `stripe.received.before` / `.after` | [`hooks.md`](./hooks.md) |
 
 > Every service doc follows a standard structure that standardizes sections for usage, inputs/outputs, DTOs, expected results, errors, and working examples.
@@ -618,4 +624,5 @@ All service-level documentation now lives in dedicated markdown files so each me
 - `products.md`, `plans.md`, `features.md`, and `billing-cycles.md` document CRUD flows, DTOs, and association helpers for each domain surface.
 - `feature-checker.md` explains the subscription override → plan value → feature default resolution order in depth.
 - `customers.md` details how caller-supplied customer keys map to internal IDs and where they are required.
-- `stripe-integration.md` contains the full Stripe workflow, including where signature verification must happen before calling `processStripeEvent()`.
+- [Configuration Sync](config-sync.md) documents catalog sync from a JSON file or `ConfigSyncDto`.
+- [Stripe Integration](stripe-integration.md) contains the full Stripe API, including where signature verification must happen before calling `processStripeEvent()`.

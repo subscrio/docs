@@ -5,7 +5,9 @@ The Product Management Service governs product lifecycles inside Subscrio: creat
 
 - Product keys are global, immutable identifiers.
 - Deletion is guarded by domain rules: products must be archived and free of plans before removal.
-- Features must be associated with a product before plans under it can set feature values.
+- Associate features with a product so the catalog is complete. `setFeatureValue` only requires the plan and feature to exist.
+
+TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
 
 ## Accessing the Service
 
@@ -91,7 +93,7 @@ Creates a new product after validating key format, display name, and optional me
     | `key` | `string` | Immutable product key. |
     | `displayName` | `string` | Display name. |
     | `description` | `string \| null` | Optional description. |
-    | `status` | `string` | `active`, `inactive`, or `archived`. |
+    | `status` | `string` | `active` or `archived`. |
     | `metadata` | `Record<string, unknown> \| null` | Metadata blob. |
     | `createdAt` | `string` | ISO timestamp. |
     | `updatedAt` | `string` | ISO timestamp. |
@@ -137,7 +139,7 @@ Creates a new product after validating key format, display name, and optional me
     | `Key` | `string` | Immutable product key. |
     | `DisplayName` | `string` | Display name. |
     | `Description` | `string?` | Optional description. |
-    | `Status` | `string` | `active`, `inactive`, or `archived`. |
+    | `Status` | `string` | `active` or `archived`. |
     | `Metadata` | `Dictionary<string, object?>?` | Metadata blob. |
     | `CreatedAt` | `string` | ISO timestamp. |
     | `UpdatedAt` | `string` | ISO timestamp. |
@@ -184,11 +186,11 @@ Applies partial updates to display name, description, or metadata of an existing
 
     #### Input Properties (UpdateProductDto)
 
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `displayName` | `string` | Updated label (1–255 chars). |
-    | `description` | `string` | Replacement description (≤1000 chars). |
-    | `metadata` | `Record<string, unknown>` | Full metadata blob (overwrites stored value). |
+    | Field | Type | Required | Description |
+    | --- | --- | --- | --- |
+    | `displayName` | `string` | No | Updated label (1–255 chars). |
+    | `description` | `string` | No | Replacement description (≤1000 chars). |
+    | `metadata` | `Record<string, unknown>` | No | Full metadata blob (overwrites stored value). |
 
     #### Returns
     `Promise<ProductDto>` – updated product snapshot.

@@ -8,6 +8,8 @@ The Feature Checker service evaluates feature values at runtime. Every method en
 
 The service answers questions at both subscription and customer levels, exposes plan-access helpers, and can summarize usage patterns. Results draw from `FeatureValueResolver`, so the hierarchy is consistent everywhere.
 
+Resolved values are stored as strings. The generic type parameter is a cast, not a parser. Use `string` (or parse after you get the value). In .NET, `GetValueForCustomerAsync<int>` throws because a string cannot be unboxed to `int`.
+
 ## Accessing the Service
 
 === "TypeScript"
@@ -84,10 +86,10 @@ Resolves a feature value for a single subscription using override → plan value
 
     #### Example
     ```typescript
-    const seats = await featureChecker.getValueForSubscription<number>(
+    const seats = await featureChecker.getValueForSubscription(
       'sub_1001',
       'seat-limit',
-      0
+      '0'
     );
     ```
 
@@ -248,7 +250,7 @@ Resolves every feature for the subscription's product, returning a map of `featu
 ### getValueForCustomer
 
 #### Description
-Resolves a feature for a customer/product pair by scanning active/trial subscriptions (up to `MAX_SUBSCRIPTIONS_PER_CUSTOMER`).
+Resolves a feature for a customer/product pair by scanning that customer's subscriptions for the product. TypeScript `findByCustomerId` does not apply the requested limit. .NET loads up to 100 subscriptions (`MAX_SUBSCRIPTIONS_PER_CUSTOMER`).
 
 === "TypeScript"
     #### Signature
@@ -275,11 +277,11 @@ Resolves a feature for a customer/product pair by scanning active/trial subscrip
 
     #### Example
     ```typescript
-    const maxProjects = await featureChecker.getValueForCustomer<number>(
+    const maxProjects = await featureChecker.getValueForCustomer(
       'acme-corp',
       'projecthub',
       'max-projects',
-      0
+      '0'
     );
     ```
 
@@ -528,7 +530,7 @@ Checks whether a customer currently holds an active or trial subscription for a 
 ### getActivePlans
 
 #### Description
-Lists plan keys for every active/trial subscription held by a customer (across all products).
+Lists plan keys for the customer's subscriptions. The method name says "active" but the implementation does not filter by status. It loads up to 100 subscriptions and returns those plan keys.
 
 === "TypeScript"
     #### Signature
@@ -543,7 +545,7 @@ Lists plan keys for every active/trial subscription held by a customer (across a
     | `customerKey` | `string` | Yes | Customer identifier. |
 
     #### Returns
-    `Promise<string[]>` – empty array when customer missing or no active/trial subscriptions exist.
+    `Promise<string[]>` – empty array when the customer is missing or has no subscriptions. Status is not filtered.
 
     #### Example
     ```typescript
@@ -563,7 +565,7 @@ Lists plan keys for every active/trial subscription held by a customer (across a
     | `customerKey` | `string` | Yes | Customer identifier. |
 
     #### Returns
-    `Task<List<string>>` – empty list when customer missing or no active/trial subscriptions exist.
+    `Task<List<string>>` – empty list when the customer is missing or has no subscriptions. Status is not filtered.
 
     #### Example
     ```csharp
@@ -630,7 +632,7 @@ Produces a usage rollup showing how features resolve (enabled/disabled/numeric/t
     | `productKey` | `string` | Yes | Product key. |
 
     #### Returns
-    `Task<FeatureUsageSummaryDto>` – contains `ActiveSubscriptions`, `EnabledFeatures`, `DisabledFeatures`, `NumericFeatures` (`Dictionary<string, int>`), `TextFeatures` (`Dictionary<string, string>`).
+    `Task<FeatureUsageSummaryDto>` – contains `ActiveSubscriptions`, `EnabledFeatures`, `DisabledFeatures`, `NumericFeatures` (`Dictionary<string, double>`), `TextFeatures` (`Dictionary<string, string>`).
 
     #### Example
     ```csharp

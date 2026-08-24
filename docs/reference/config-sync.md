@@ -186,7 +186,7 @@ You can pass the same config sync input to the Subscrio constructor via `initial
 
 ### Root Configuration
 
-**CRITICAL: The `features` array MUST appear before the `products` array in JSON files.**
+TypeScript `syncFromFile` requires the `features` array to appear before `products` in the JSON text. .NET `SyncFromFileAsync` does not enforce property order.
 
 === "TypeScript / JSON"
     ```json
@@ -626,14 +626,12 @@ The sync service performs comprehensive validation:
 - Enum values are valid
 
 ### JSON Property Order
-- **CRITICAL**: `features` must appear before `products` in JSON files
-- Validation throws `ValidationError` if order is incorrect
+- TypeScript `syncFromFile` throws `ValidationError` if `products` appears before `features` in the file text.
+- TypeScript `syncFromJson` and both .NET methods skip this check.
 
 ### Duplicate Key Validation
-- Feature keys must be globally unique
-- Product keys must be globally unique
-- Plan keys must be unique within product
-- Billing cycle keys must be unique within plan
+- Feature keys and product keys must be globally unique in the file.
+- The file schema allows the same plan key under different products and the same billing cycle key under different plans. Persist still requires those keys to be globally unique and records a sync error if they already exist.
 
 ### Reference Validation
 - All feature keys referenced in products must exist in features array
@@ -1004,9 +1002,9 @@ Use `archived: true` to mark entities as archived rather than deleting them:
 
 ### "features must appear before products" Error
 
-**Problem**: JSON property order is incorrect.
+**Problem**: TypeScript `syncFromFile` rejected the JSON text order.
 
-**Solution**: Ensure `features` array comes before `products` array in your JSON file.
+**Solution**: Put the `features` array before `products` in the file. This check is TypeScript-only.
 
 ### "Feature key 'X' referenced in product does not exist" Error
 
@@ -1058,8 +1056,8 @@ Loads configuration from a JSON file, validates it, and syncs products, features
     | `archived` | `{ features, products, plans, billingCycles }` | Counts of entities archived. |
     | `unarchived` | `{ features, products, plans, billingCycles }` | Counts of entities unarchived. |
     | `ignored` | `{ features, products, plans, billingCycles }` | Counts of entities not in config (left unchanged). |
-    | `errors` | `Array<{ message, entityType?, key? }>` | Errors encountered during sync. |
-    | `warnings` | `string[]` | Non-fatal warnings. |
+    | `errors` | `Array<{ entityType, key, message }>` | Errors encountered during sync. |
+    | `warnings` | `Array<{ entityType, key, message }>` | Non-fatal warnings. |
 
     #### Example
     ```typescript
@@ -1090,7 +1088,7 @@ Loads configuration from a JSON file, validates it, and syncs products, features
     | `Unarchived` | `ConfigSyncCounts` | Counts of entities unarchived. |
     | `Ignored` | `ConfigSyncCounts` | Counts of entities not in config (left unchanged). |
     | `Errors` | `List<ConfigSyncError>` | Errors encountered during sync. |
-    | `Warnings` | `List<string>` | Non-fatal warnings. |
+    | `Warnings` | `List<ConfigSyncWarning>` | `{ EntityType, Key, Message }`. |
 
     #### Example
     ```csharp
@@ -1100,7 +1098,7 @@ Loads configuration from a JSON file, validates it, and syncs products, features
 
 #### Expected Results
 - Reads and parses the JSON file.
-- Validates JSON property order (`features` before `products`).
+- TypeScript validates JSON property order (`features` before `products`). .NET does not.
 - Validates config schema and all references.
 - Creates, updates, archives, and unarchives entities as needed.
 - Returns a detailed report.

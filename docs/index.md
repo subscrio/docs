@@ -79,3 +79,6 @@ The Stripe integration accepts supported, verified events and maintains the matc
 - [Feature checker](reference/feature-checker.md)
 - [Hooks](reference/hooks.md)
 - [How to extend Subscrio](reference/how-to-extend.md)
+- [Configuration sync](reference/config-sync.md)
+- [How to integrate with Stripe](reference/how-to-integrate-with-stripe.md)
+- [Relationships](reference/relationships.md)

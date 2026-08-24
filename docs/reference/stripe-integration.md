@@ -7,6 +7,8 @@
 - Persist Stripe customer IDs in `Customer.externalBillingId`. If it’s missing, the webhook handler will backfill it using the metadata described above.
 - Persist Stripe price IDs in `BillingCycle.externalProductId` so events can map to billing cycles (and therefore plans). Once the price is mapped, Subscrio can create and update subscriptions with no additional customization.
 
+TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `ConfigurationError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `ConfigurationException`. Potential Errors tables use the TypeScript names.
+
 ## Accessing the Service
 
 === "TypeScript"
@@ -31,14 +33,14 @@
     | Method | Description | Returns |
     | --- | --- | --- |
     | `processStripeEvent` | Entry point for verified Stripe webhook events | `Promise<void>` |
-    | `createStripeSubscription` | Helper to create a Subscrio subscription tied to Stripe metadata | `Promise<SubscriptionDto>` |
+    | `createStripeSubscription` | Creates a local placeholder subscription; does not call Stripe | `Promise<Subscription>` |
     | `createCheckoutSession` | Generate Stripe Checkout URL with automatic customer creation and subscription linking | `Promise<{ url, sessionId }>` |
 
 === ".NET"
     | Method | Description | Returns |
     | --- | --- | --- |
     | `ProcessStripeEventAsync` | Entry point for verified Stripe webhook events | `Task` |
-    | `CreateStripeSubscriptionAsync` | Helper to create a Subscrio subscription tied to Stripe metadata | `Task<SubscriptionDto>` |
+    | `CreateStripeSubscriptionAsync` | Creates a local placeholder subscription; does not call Stripe | `Task<Subscription>` |
     | `CreateCheckoutSessionAsync` | Generate Stripe Checkout URL with automatic customer creation and subscription linking | `Task<(string Url, string SessionId)>` |
 
 *(Handlers invoked internally by `processStripeEvent` are described for completeness.)*
@@ -136,7 +138,7 @@ Routes a verified `Stripe.Event` to the appropriate handler (subscription lifecy
 ### createStripeSubscription
 
 #### Description
-Bootstraps a Subscrio subscription linked to Stripe metadata (customer/billing-cycle) while you build deeper automation.
+Creates a local Subscrio subscription with a placeholder `stripeSubscriptionId` (`sub_placeholder_{timestamp}`). It does not call the Stripe API. `stripePriceId` is unused. Prefer `createCheckoutSession` plus `processStripeEvent` for a real Stripe subscription.
 
 #### Signature
 
@@ -152,7 +154,7 @@ Bootstraps a Subscrio subscription linked to Stripe metadata (customer/billing-c
 
 === ".NET"
     ```csharp
-    Task<SubscriptionDto> CreateStripeSubscriptionAsync(
+    Task<Subscription> CreateStripeSubscriptionAsync(
         string customerKey,
         string planKey,
         string billingCycleKey,
@@ -175,12 +177,12 @@ Bootstraps a Subscrio subscription linked to Stripe metadata (customer/billing-c
     `Promise<Subscription>` – the saved domain subscription (with placeholder `stripeSubscriptionId`).
 
 === ".NET"
-    `Task<SubscriptionDto>` – the saved subscription snapshot.
+    `Task<Subscription>` – the saved domain entity (not a DTO). `Key` is generated. `StripeSubscriptionId` is a placeholder.
 
 #### Expected Results
 - Validates entities and ensures customer has `externalBillingId`.
-- Generates a subscription key (or use one you pass in metadata), sets activation/current period timestamps, and saves the subscription.
-- Leaves a placeholder `stripeSubscriptionId` for later reconciliation—webhooks will attach the real Stripe subscription once you pass the metadata described above.
+- Generates a subscription key, sets activation/current period timestamps, and saves a local subscription.
+- Sets `stripeSubscriptionId` to `sub_placeholder_{timestamp}`. It does not create a Stripe subscription. Webhooks can later attach a real Stripe ID if you pass the metadata described above.
 
 #### Potential Errors
 
@@ -264,8 +266,10 @@ When a customer completes checkout, the webhook handler will:
         string? customerEmail = null,
         string? customerName = null,
         bool? allowPromotionCodes = null,
+        string? billingAddressCollection = null,
+        string[]? paymentMethodTypes = null,
         int? trialPeriodDays = null,
-        IReadOnlyDictionary<string, string>? metadata = null
+        Dictionary<string, string>? metadata = null
     )
     ```
 
@@ -302,8 +306,10 @@ When a customer completes checkout, the webhook handler will:
     | `customerEmail` | `string?` | No | Pre-fill customer email in checkout. |
     | `customerName` | `string?` | No | Pre-fill customer name in checkout. |
     | `allowPromotionCodes` | `bool?` | No | Enable promotion code input in checkout. |
+    | `billingAddressCollection` | `string?` | No | `auto` or `required`. |
+    | `paymentMethodTypes` | `string[]?` | No | Restrict allowed payment methods. |
     | `trialPeriodDays` | `int?` | No | Set trial period duration in days. |
-    | `metadata` | `IReadOnlyDictionary<string, string>?` | No | Additional custom metadata to pass through. |
+    | `metadata` | `Dictionary<string, string>?` | No | Additional custom metadata to pass through. |
 
 #### Returns
 
@@ -317,7 +323,7 @@ When a customer completes checkout, the webhook handler will:
 - **Stripe Customer Creation**: If customer doesn't have `externalBillingId`, creates Stripe customer automatically with `subscrioCustomerKey` metadata.
 - **Metadata Setup**: Sets `subscrioCustomerKey` and optionally `subscrioSubscriptionKey` in both session and subscription metadata.
 - **Subscription Linking**: If `subscriptionKey` provided, validates subscription exists and belongs to customer. Webhook will update this subscription when checkout completes.
-- **Full Stripe Support**: All Stripe Checkout options accessible via convenience parameters or `stripeOptions` for complete API access.
+- **Full Stripe Support**: TypeScript also accepts `stripeOptions` for extra Checkout Session fields. .NET has no `stripeOptions` passthrough.
 
 #### Potential Errors
 
@@ -439,7 +445,7 @@ When a customer completes checkout, the webhook handler will:
 - **Webhook verification** – Your HTTP endpoint must verify Stripe signatures with `stripe.webhooks.constructEvent` (or equivalent) before calling `processStripeEvent`.
 - **Customer metadata** – Attach `subscrioCustomerKey` (and optionally `subscrioSubscriptionKey`) to every Stripe customer and subscription you create so Subscrio can reconcile records automatically.
 - **Billing-cycle mapping** – Store Stripe price IDs in `BillingCycle.externalProductId` to map subscriptions/billing cycles accurately.
-- **Reference guide** – See `docs/reference/how-to-integrate-with-stripe.md` for an end-to-end walkthrough that covers setup, metadata, and webhook handling.
+- **How-to guide** – See [How to Integrate with Stripe](how-to-integrate-with-stripe.md) for setup, metadata, and webhook handling.
 - **Hooks** – See [hooks.md](./hooks.md) and [how-to-extend.md](./how-to-extend.md).
 
 === "TypeScript"

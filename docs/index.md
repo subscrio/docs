@@ -1,6 +1,6 @@
 ---
-title: Subscrio documentation
-description: API reference and implementation guides for the Subscrio .NET and TypeScript entitlement libraries.
+title: Feature entitlements for .NET and TypeScript
+description: API reference and guides for Subscrio. Install the library, define products and plans, assign subscriptions, and resolve feature access in .NET or TypeScript.
 ---
 
 # Subscrio documentation

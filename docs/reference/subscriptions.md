@@ -1,3 +1,8 @@
+---
+title: Subscriptions
+description: Create customer subscriptions, update lifecycle dates and metadata, and store feature overrides on top of plan values.
+---
+
 # Subscriptions Service Reference
 
 ## Service Overview

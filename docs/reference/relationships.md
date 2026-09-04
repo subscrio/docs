@@ -1,3 +1,8 @@
+---
+title: Relationships
+description: How Subscrio products, features, plans, billing cycles, customers, and subscriptions relate, plus the feature resolution order.
+---
+
 # Subscrio Entity Relationships
 
 This reference explains how the core domain objects relate to each other, plus the feature resolution order and customer key guidelines that were previously embedded in `getting-started.md`.

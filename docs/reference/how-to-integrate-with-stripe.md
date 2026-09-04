@@ -1,3 +1,8 @@
+---
+title: How to integrate with Stripe
+description: Map Stripe prices and customers to Subscrio records, then forward verified webhook events so subscriptions stay in sync.
+---
+
 # How to Integrate with Stripe
 
 This guide walks through the exact steps needed to keep Subscrio and Stripe in sync. The library already contains all of the handlers—your job is to provide the right metadata, map Stripe IDs to Subscrio records, and forward verified events to `subscrio.stripe.processStripeEvent`.

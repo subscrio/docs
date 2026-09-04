@@ -1,3 +1,8 @@
+---
+title: Stripe integration API
+description: Process verified Stripe webhook events, create checkout sessions, and keep Subscrio customers and subscriptions aligned with Stripe.
+---
+
 # Stripe Integration Service Reference
 
 ## Service Overview

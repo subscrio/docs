@@ -2,6 +2,63 @@
 {% block extrahead %}
   <link rel="stylesheet" href="{{ 'assets/stylesheets/custom.a2a27114.min.css' | url }}">
   <link rel="stylesheet" href="{{ 'assets/stylesheets/subscrio.css' | url }}">
+  {% if page.meta and page.meta.title %}
+    {% set seo_title = page.meta.title %}
+    {% set og_title = page.meta.title ~ " - " ~ config.site_name %}
+  {% elif page.title and not page.is_homepage %}
+    {% set seo_title = page.title | striptags %}
+    {% set og_title = seo_title ~ " - " ~ config.site_name %}
+  {% else %}
+    {% set seo_title = config.site_name %}
+    {% set og_title = config.site_name %}
+  {% endif %}
+  {% set seo_description = (page.meta.description if page.meta and page.meta.description else config.site_description) or "" %}
+  {% set seo_url = page.canonical_url or config.site_url %}
+  {% set site_root = config.site_url.rstrip("/") %}
+  {% set og_image = site_root ~ "/assets/images/logo-576x110.png" %}
+  {% if page.meta and page.meta.robots %}
+  <meta name="robots" content="{{ page.meta.robots }}">
+  {% endif %}
+  <meta property="og:type" content="{{ 'website' if page.is_homepage else 'article' }}">
+  <meta property="og:title" content="{{ og_title }}">
+  <meta property="og:description" content="{{ seo_description }}">
+  <meta property="og:url" content="{{ seo_url }}">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="{{ og_image }}">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="576">
+  <meta property="og:image:height" content="110">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:site" content="@subscrio">
+  <meta name="twitter:title" content="{{ og_title }}">
+  <meta name="twitter:description" content="{{ seo_description }}">
+  <meta name="twitter:image" content="{{ og_image }}">
+  <link rel="describedby" href="{{ site_root }}/llms.txt">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "{{ 'WebSite' if page.is_homepage else 'TechArticle' }}",
+    {% if page.is_homepage %}
+    "name": {{ config.site_name | tojson }},
+    {% else %}
+    "headline": {{ seo_title | tojson }},
+    "isPartOf": {
+      "@type": "WebSite",
+      "name": {{ config.site_name | tojson }},
+      "url": {{ config.site_url | tojson }}
+    },
+    {% endif %}
+    "description": {{ seo_description | tojson }},
+    "url": {{ seo_url | tojson }},
+    "inLanguage": "en",
+    "publisher": {
+      "@type": "Organization",
+      "name": "SaaS Experts, Inc.",
+      "url": "https://subscrio.com"
+    }
+  }
+  </script>
 {% endblock %}
 {% block tabs %}
   {# Top navigation tabs (e.g. "Reference") are intentionally disabled.

@@ -1,3 +1,7 @@
+---
+title: Feature checker
+description: Resolve feature values at runtime from subscription overrides, then plan values, then feature defaults, at subscription or customer scope.
+---
 
 # Feature Checker Service Reference
 

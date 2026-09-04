@@ -1,3 +1,8 @@
+---
+title: Getting started
+description: Install Subscrio for TypeScript or .NET, create a small entitlement catalog, assign a customer subscription, and resolve feature access from your database.
+---
+
 # Getting Started with Subscrio
 
 This guide installs the library, defines a small entitlement catalog, assigns a customer subscription, and resolves feature access.

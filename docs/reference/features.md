@@ -1,3 +1,8 @@
+---
+title: Features
+description: Create, update, archive, and list entitlement features. Features use toggle, numeric, or text values and resolve through override, then plan, then default.
+---
+
 # Feature Management Service Reference
 
 ## Service Overview

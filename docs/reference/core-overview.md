@@ -1,3 +1,8 @@
+---
+title: Core API
+description: Reference for the Subscrio class, configuration, and public services in the TypeScript package and the Subscrio.Core .NET package.
+---
+
 # Subscrio Core API Reference
 
 Reference for the shared entitlement model and public services exposed by the `subscrio` TypeScript package and `Subscrio.Core` .NET package.

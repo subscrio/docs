@@ -1,3 +1,8 @@
+---
+title: Configuration sync
+description: Sync products, features, plans, and billing cycles from a JSON file or ConfigSyncDto so every environment uses the same entitlement catalog.
+---
+
 # Configuration Sync Service Reference
 
 The Configuration Sync Service allows you to define all products, features, plans, and billing cycles in a single JSON configuration file or programmatically, then sync them to the database. This is ideal for version-controlled configuration management and infrastructure-as-code workflows.

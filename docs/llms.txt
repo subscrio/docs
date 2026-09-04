@@ -1,0 +1,28 @@
+# Subscrio
+
+> Open-source entitlement engine for .NET and TypeScript. Subscrio stores products, features, plans, billing cycles, customers, and subscriptions in your database, then resolves feature access from subscription override, then plan value, then feature default.
+
+These pages are the public API reference and implementation guides. Use the TypeScript package `subscrio` or the .NET package `Subscrio.Core`. Subscrio does not process payments, run feature-flag rollouts, replace RBAC, or activate device licenses.
+
+## Docs
+
+- [Welcome](https://docs.subscrio.com/): What Subscrio is, how the entitlement model fits together, and where to start
+- [Getting started](https://docs.subscrio.com/reference/getting-started/): Install the library, define a small catalog, assign a subscription, and resolve feature access
+- [Core API](https://docs.subscrio.com/reference/core-overview/): Subscrio class, configuration, and public service catalog
+- [Relationships](https://docs.subscrio.com/reference/relationships/): How products, features, plans, billing cycles, customers, and subscriptions relate
+- [Subscription lifecycle](https://docs.subscrio.com/reference/subscription-lifecycle/): How status is computed from dates (`pending`, `trial`, `active`, `cancellation_pending`, `cancelled`, `expired`)
+- [Feature checker](https://docs.subscrio.com/reference/feature-checker/): Runtime feature resolution at subscription and customer scope
+- [Configuration sync](https://docs.subscrio.com/reference/config-sync/): Sync the entitlement catalog from JSON or `ConfigSyncDto`
+- [How to extend](https://docs.subscrio.com/reference/how-to-extend/): Inline hooks, first-party packages, and custom extensions
+- [How to integrate with Stripe](https://docs.subscrio.com/reference/how-to-integrate-with-stripe/): Map Stripe IDs and forward verified webhook events
+
+## API reference
+
+- [Products](https://docs.subscrio.com/reference/products/): Product lifecycle, archival, deletion guards, and feature associations
+- [Features](https://docs.subscrio.com/reference/features/): Global feature definitions (`toggle`, `numeric`, `text`) and catalog methods
+- [Plans](https://docs.subscrio.com/reference/plans/): Plan lifecycle, feature values, and expiration transitions
+- [Billing cycles](https://docs.subscrio.com/reference/billing-cycles/): Renewal duration, cadence, forever cycles, and Stripe price IDs
+- [Customers](https://docs.subscrio.com/reference/customers/): Customer keys, archival, and `externalBillingId`
+- [Subscriptions](https://docs.subscrio.com/reference/subscriptions/): Subscription writes, lifecycle dates, and feature overrides
+- [Hooks](https://docs.subscrio.com/reference/hooks/): Before/after events for customer, subscription, and Stripe writes
+- [Stripe integration API](https://docs.subscrio.com/reference/stripe-integration/): `processStripeEvent`, checkout sessions, and webhook handlers

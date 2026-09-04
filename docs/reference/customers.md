@@ -1,3 +1,8 @@
+---
+title: Customers
+description: Create and manage Subscrio customers, including immutable keys, archival, deletion rules, and Stripe externalBillingId mapping.
+---
+
 # Customer Management Service Reference
 
 ## Service Overview

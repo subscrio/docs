@@ -1,3 +1,8 @@
+---
+title: Plans
+description: Create plans on a product, set feature values, and configure expiration transitions to another billing cycle in TypeScript and .NET.
+---
+
 # Plan Management Service Reference
 
 ## Service Overview

@@ -1,3 +1,8 @@
+---
+title: Products
+description: Create and manage Subscrio products, including archival, deletion rules, and associating features with a product catalog.
+---
+
 # Product Management Service Reference
 
 ## Service Overview

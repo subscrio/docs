@@ -1,3 +1,8 @@
+---
+title: Hooks
+description: Observe or mutate customer, subscription, and Stripe writes with before and after hook events in the TypeScript and .NET libraries.
+---
+
 # Hooks
 
 Hooks let implementors observe and optionally mutate customer and subscription writes, plus inbound Stripe events. Every domain mutation emits a **before** event and an **after** event.

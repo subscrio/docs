@@ -1,3 +1,8 @@
+---
+title: Subscription lifecycle
+description: How Subscrio computes pending, trial, active, cancellation_pending, cancelled, and expired from subscription dates in TypeScript and .NET.
+---
+
 # Subscription lifecycle
 
 A subscription's `status` is calculated from its dates each time you read it, so you do not update the status directly. Both SDKs use the same rules: TypeScript reads the `subscrio.subscription_status_view` SQL view, while .NET applies the equivalent logic in `SubscriptionMapper.ComputeStatus`.

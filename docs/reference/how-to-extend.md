@@ -1,3 +1,8 @@
+---
+title: How to extend
+description: Add behavior around Subscrio writes with inline hook handlers, first-party audit-log and payments packages, or your own extension.
+---
+
 # How to Extend Subscrio
 
 Use [hooks](./hooks.md) to add behavior around customer and subscription mutations without forking Subscrio. This page covers inline handlers, the first-party audit-log and payments packages, and how to package your own extension.

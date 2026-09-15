@@ -1,14 +1,11 @@
 # Subscrio API Reference Inventory
 
-Source of truth for documentation verification. Extracted from local `../core/typescript/` and `../core/dotnet/` in the workspace — never from npm or NuGet.
+Source of truth for documentation verification. Extracted from the local `../core/typescript/` and `../core/dotnet/` projects in the workspace, never from npm or NuGet.
 
 **Source paths:**
-- `../core/typescript/src/application/services/*.ts`
-- `../core/typescript/src/application/dtos/*.ts`
-- `../core/typescript/src/Subscrio.ts`
-- `../core/dotnet/src/Application/Services/*.cs`
-- `../core/dotnet/src/Application/DTOs/*.cs`
-- `../core/dotnet/src/Subscrio.cs`
+
+- `../core/typescript/src/**/*.ts`
+- `../core/dotnet/src/**/*.cs`
 
 ---
 
@@ -16,23 +13,23 @@ Source of truth for documentation verification. Extracted from local `../core/ty
 
 | Page | Service / Class | Method Count | Doc Status |
 |------|-----------------|--------------|------------|
-| `index.md` | Welcome | — | ✓ Verified against source 2026-08-23 |
-| `getting-started.md` | Guide | — | ✓ Verified against source 2026-08-23 |
-| `core-overview.md` | Subscrio (root) | 6 | ✓ Verified against source 2026-08-23 |
-| `subscription-lifecycle.md` | Status view / ComputeStatus | — | ✓ Verified against source 2026-08-23 |
-| `subscriptions.md` | SubscriptionManagementService | 13 | ✓ Verified against source 2026-08-23 |
-| `products.md` | ProductManagementService | 9 | ✓ Verified against source 2026-08-23 |
-| `features.md` | FeatureManagementService | 8 | ✓ Verified against source 2026-08-23 |
-| `plans.md` | PlanManagementService | 12 | ✓ Verified against source 2026-08-23 |
-| `billing-cycles.md` | BillingCycleManagementService | 11 | ✓ Verified against source 2026-08-23 |
-| `customers.md` | CustomerManagementService | 7 | ✓ Verified against source 2026-08-23 |
-| `feature-checker.md` | FeatureCheckerService | 9 | ✓ Verified against source 2026-08-23 |
-| `hooks.md` | HookDispatcher | 28 events | ✓ Verified against source 2026-08-23 |
-| `how-to-extend.md` | payments + audit-log | — | ✓ Verified against source 2026-08-23 |
-| `config-sync.md` | ConfigSyncService | 2 | ✓ Verified against source 2026-08-23 |
-| `how-to-integrate-with-stripe.md` | Guide | — | ✓ Verified against source 2026-08-23 |
-| `stripe-integration.md` | StripeIntegrationService | 3 | ✓ Verified against source 2026-08-23 |
-| `relationships.md` | Model | — | ✓ Verified against source 2026-08-23 |
+| `index.md` | Welcome | — | ✓ Verified against source 2026-09-14 |
+| `getting-started.md` | Guide | — | ✓ Verified against source 2026-09-14 |
+| `core-overview.md` | Subscrio (root) | 6 | ✓ Verified against source 2026-09-14 |
+| `subscription-lifecycle.md` | Status view / ComputeStatus | — | ✓ Verified against source 2026-09-14 |
+| `subscriptions.md` | SubscriptionManagementService | 13 | ✓ Verified against source 2026-09-14 |
+| `products.md` | ProductManagementService | 9 | ✓ Verified against source 2026-09-14 |
+| `features.md` | FeatureManagementService | 8 | ✓ Verified against source 2026-09-14 |
+| `plans.md` | PlanManagementService | 12 | ✓ Verified against source 2026-09-14 |
+| `billing-cycles.md` | BillingCycleManagementService | 11 | ✓ Verified against source 2026-09-14 |
+| `customers.md` | CustomerManagementService | 7 | ✓ Verified against source 2026-09-14 |
+| `feature-checker.md` | FeatureCheckerService | 9 | ✓ Verified against source 2026-09-14 |
+| `hooks.md` | HookDispatcher | 28 events | ✓ Verified against source 2026-09-14 |
+| `how-to-extend.md` | payments + audit-log | — | ✓ Verified against source 2026-09-14 |
+| `config-sync.md` | ConfigSyncService | 2 | ✓ Verified against source 2026-09-14 |
+| `how-to-integrate-with-stripe.md` | Guide | — | ✓ Verified against source 2026-09-14 |
+| `stripe-integration.md` | StripeIntegrationService and StripeConfig | 3 TS / 2 .NET service methods plus config helper | ✓ Verified against source 2026-09-14 |
+| `relationships.md` | Model | — | ✓ Verified against source 2026-09-14 |
 
 ---
 
@@ -185,8 +182,8 @@ Source of truth for documentation verification. Extracted from local `../core/ty
 
 | # | TS Method | .NET Method | Inputs | Returns |
 |---|-----------|-------------|--------|---------|
-| 1 | `processStripeEvent(event)` | `ProcessStripeEventAsync(event)` | Stripe.Event | void |
-| 2 | `createStripeSubscription(customerKey, planKey, billingCycleKey, stripePriceId)` | `CreateStripeSubscriptionAsync(...)` | string, string, string, string | SubscriptionDto / Subscription |
+| 1 | `constructStripeEvent(payload, signature)` | `StripeConfig.ConstructStripeEvent(payload, signature)` | raw body, signature | Stripe.Event |
+| 2 | `processStripeEvent(event)` | `ProcessStripeEventAsync(event)` | Stripe.Event | void |
 | 3 | `createCheckoutSession(params)` | `CreateCheckoutSessionAsync(params)` | CreateCheckoutSessionParams | { url, sessionId } |
 
 ---
@@ -200,7 +197,7 @@ Source of truth for documentation verification. Extracted from local `../core/ty
 | 1 | `installSchema(adminPassphrase?)` | `InstallSchemaAsync(adminPassphrase?)` | string? | void |
 | 2 | `verifySchema()` | `VerifySchemaAsync()` | — | string \| null |
 | 3 | `migrate()` | `MigrateAsync()` | — | number |
-| 4 | `dropSchema()` | `DropSchemaAsync()` | — | void |
+| 4 | `dropSchema(adminPassphrase?)` | `DropSchemaAsync(adminPassphrase?)` | string? | void |
 | 5 | `runInitialConfigSync()` | `RunInitialConfigSyncAsync()` | — | ConfigSyncReport \| null |
 | 6 | `close()` | `Dispose()` | — | void |
 

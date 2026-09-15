@@ -47,7 +47,7 @@ Reference for the shared entitlement model and public services exposed by the `s
     | `installSchema` | Creates every Subscrio database table, seeds configuration rows, and optionally writes the admin passphrase hash | `Promise<void>` |
     | `migrate` | Runs pending database migrations to update the schema to the latest version | `Promise<number>` |
     | `verifySchema` | Confirms whether the Subscrio schema is already installed and returns the current schema version | `Promise<string \| null>` |
-    | `dropSchema` | Removes every table created by Subscrio (for local development resets or automated tests) | `Promise<void>` |
+    | `dropSchema` | Verifies the configured administrator passphrase when required, then removes every table created by Subscrio | `Promise<void>` |
     | `runInitialConfigSync` | If `initialConfig` was passed to the constructor, runs config sync (file or JSON) and returns the report; otherwise returns `null` | `Promise<ConfigSyncReport \| null>` |
     | `close` | Closes the database connection pool | `Promise<void>` |
 
@@ -57,7 +57,7 @@ Reference for the shared entitlement model and public services exposed by the `s
     | `InstallSchemaAsync` | Creates every Subscrio database table, seeds configuration rows, and optionally writes the admin passphrase hash | `Task` |
     | `MigrateAsync` | Runs pending database migrations to update the schema to the latest version | `Task<int>` |
     | `VerifySchemaAsync` | Confirms whether the Subscrio schema is already installed and returns the current schema version | `Task<string?>` |
-    | `DropSchemaAsync` | Removes every table created by Subscrio (for local development resets or automated tests) | `Task` |
+    | `DropSchemaAsync` | Verifies the configured administrator passphrase when required, then removes every table created by Subscrio | `Task` |
     | `RunInitialConfigSyncAsync` | If `InitialConfig` was passed to the constructor, runs config sync (file or JSON) and returns the report; otherwise returns `null` | `Task<ConfigSyncReport?>` |
     | `Dispose` | Closes the database connection pool | `void` |
 
@@ -108,7 +108,8 @@ Reference for the shared entitlement model and public services exposed by the `s
 
 #### Expected Results
 
-- TypeScript opens a PostgreSQL connection using `config.database`.
+- TypeScript opens a PostgreSQL connection using `config.database`. `installSchema`, `migrate`, `verifySchema`, `dropSchema`, and all service queries use that PostgreSQL pool.
+- TypeScript throws `ConfigurationError` at construction when the connection string or `databaseType` selects SQL Server. SQL Server schema SQL exists for test parity; it is not a public `Subscrio` runtime.
 - .NET opens PostgreSQL or SQL Server using `config.Database`, including `DatabaseType` (default `PostgreSQL`).
 - Constructs repository instances and wires each service with its dependencies.
 - Keeps a shared schema installer for schema management helpers.
@@ -117,7 +118,8 @@ Reference for the shared entitlement model and public services exposed by the `s
 
 | Error | When |
 | --- | --- |
-| `Error` / `ApplicationException` | Thrown if required config such as `DATABASE_URL` is missing when using `loadConfig()` / `ConfigLoader.LoadConfig()`. Construction itself does not throw `ConfigurationError`. |
+| `ConfigurationError` | TypeScript: the connection string or `databaseType` selects SQL Server. The TypeScript query runtime requires PostgreSQL. |
+| `Error` / `ApplicationException` | Thrown if required config such as `DATABASE_URL` is missing when using `loadConfig()` / `ConfigLoader.LoadConfig()`. |
 
 #### Example
 
@@ -151,9 +153,13 @@ Reference for the shared entitlement model and public services exposed by the `s
         connectionString: string;
         ssl?: boolean;
         poolSize?: number;
+        databaseType?: 'postgres' | 'sqlserver';
       };
       adminPassphrase?: string;
-      stripe?: { secretKey: string };
+      stripe?: {
+        secretKey: string;
+        webhookSecret?: string;
+      };
       logging?: { level: 'debug' | 'info' | 'warn' | 'error' };
       initialConfig?: InitialConfigSync;  // { type: 'file', filePath: string } | { type: 'json', config: ConfigSyncDto }
       hooks?: HooksConfig;
@@ -188,9 +194,10 @@ Reference for the shared entitlement model and public services exposed by the `s
 === "TypeScript"
     | Field | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `connectionString` | `string` | Yes | Full Postgres URI (`postgresql://user:pass@host:port/db`). |
-    | `ssl` | `boolean` | No | Forces SSL when running outside trusted networks. |
-    | `poolSize` | `number` | No | Custom pg pool size; defaults to driver preset. |
+    | `connectionString` | `string` | Yes | PostgreSQL URI (`postgresql://user:pass@host:port/db`). |
+    | `ssl` | `boolean` | No | When `true`, the pg pool uses `{ rejectUnauthorized: true }`. |
+    | `poolSize` | `number` | No | Custom pg pool size; defaults to 10. |
+    | `databaseType` | `'postgres' \| 'sqlserver'` | No | Optional dialect hint. Detected from the connection string when omitted. `sqlserver` is not a TypeScript runtime; construction throws `ConfigurationError`. `loadConfig()` does not read `DATABASE_TYPE`. |
 
 === ".NET"
     | Property | Type | Required | Description |
@@ -202,7 +209,7 @@ Reference for the shared entitlement model and public services exposed by the `s
 
 ##### `adminPassphrase`
 
-Optional override for the admin passphrase hash stored during `installSchema()` / `InstallSchemaAsync()`. If omitted you can pass the passphrase directly to the install method.
+Optional passphrase for privileged schema operations. `installSchema()` / `InstallSchemaAsync()` hashes and stores it only when no administrator passphrase hash exists. Installation never replaces an existing hash. `dropSchema()` / `DropSchemaAsync()` requires a matching passphrase when a hash is stored. A method argument takes precedence over the constructor setting.
 
 ##### `initialConfig` / `InitialConfig`
 
@@ -213,24 +220,28 @@ Optional config sync input (same as used by [ConfigSyncService](config-sync.md))
 === "TypeScript"
     | Field | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `secretKey` | `string` | Yes | Private Stripe secret used by `createCheckoutSession` and by your webhook endpoint when creating a Stripe client. `createStripeSubscription` does not call Stripe. |
+    | `secretKey` | `string` | Yes | Private Stripe secret used by `createCheckoutSession` and by your webhook endpoint when creating a Stripe client. |
+    | `webhookSecret` | `string` | No | Stripe endpoint signing secret, normally beginning with `whsec_`. Required by `subscrio.stripe.constructStripeEvent()`. |
 
 === ".NET"
     | Property | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `SecretKey` | `string` | Yes | Private Stripe secret used by `CreateCheckoutSessionAsync` and by your webhook endpoint when creating a Stripe client. `CreateStripeSubscriptionAsync` does not call Stripe. |
+    | `SecretKey` | `string` | Yes | Private Stripe secret used by `CreateCheckoutSessionAsync` and by your webhook endpoint when creating a Stripe client. |
+    | `WebhookSecret` | `string?` | No | Stripe endpoint signing secret, normally beginning with `whsec_`. Required by `StripeConfig.ConstructStripeEvent()`. |
+
+Webhook verification is exposed in different places. TypeScript provides `subscrio.stripe.constructStripeEvent(payload, signatureHeader)`. .NET provides `config.Stripe.ConstructStripeEvent(json, signatureHeader)`. See [Stripe Integration](stripe-integration.md) for complete examples.
 
 ##### `logging` object
 
 === "TypeScript"
     | Field | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `level` | `'debug' \| 'info' \| 'warn' \| 'error'` | Yes | Sets global log verbosity for Subscrio internals. |
+    | `level` | `'debug' \| 'info' \| 'warn' \| 'error'` | Yes | Reserved configuration value. The current TypeScript library loads this value but does not emit or filter diagnostics with it. |
 
 === ".NET"
     | Property | Type | Required | Description |
     | --- | --- | --- | --- |
-    | `Level` | `LogLevel` | No | `Debug`, `Info` (default), `Warn`, or `Error`. |
+    | `Level` | `LogLevel` | No | Reserved configuration value. The current .NET library loads `Debug`, `Info` (default), `Warn`, or `Error`, but does not emit or filter diagnostics with it. |
 
 ### installSchema
 
@@ -278,7 +289,7 @@ Optional config sync input (same as used by [ConfigSyncService](config-sync.md))
 #### Expected Results
 
 - Runs the schema installer to create all tables, extensions, and seed configuration rows.
-- Stores the admin passphrase hash when provided.
+- Stores the admin passphrase hash when provided and no hash already exists. Installation never replaces an existing hash.
 
 #### Potential Errors
 
@@ -462,32 +473,100 @@ Runs pending database migrations to update the schema to the latest version. Mig
     }
     ```
 
-### dropSchema
+### runInitialConfigSync
 
 #### Description
- Removes every table created by Subscrio. Intended for local development resets or automated tests.
+
+Runs the constructor-supplied initial configuration. Use this after the schema has been installed or verified. The method returns `null` when the constructor did not receive an initial configuration.
 
 #### Signature
 
 === "TypeScript"
     ```typescript
-    dropSchema(): Promise<void>
+    runInitialConfigSync(): Promise<ConfigSyncReport | null>
     ```
 
 === ".NET"
     ```csharp
-    Task DropSchemaAsync()
+    Task<ConfigSyncReport?> RunInitialConfigSyncAsync()
+    ```
+
+#### Inputs
+
+The method has no arguments. It uses `initialConfig` or `InitialConfig` from the constructor configuration.
+
+#### Returns
+
+=== "TypeScript"
+    `Promise<ConfigSyncReport | null>`
+
+=== ".NET"
+    `Task<ConfigSyncReport?>`
+
+The result is the same report returned by `configSync.syncFromFile()` / `syncFromJson()` or the corresponding .NET methods. It is `null` when no initial configuration was supplied.
+
+#### Expected results
+
+- A file configuration calls `syncFromFile` or `SyncFromFileAsync`.
+- An object configuration calls `syncFromJson` or `SyncFromJsonAsync`.
+- An absent configuration returns `null` without changing the catalog.
+- In .NET, an `InitialConfigOptions` object with neither `FilePath` nor `Config` also returns `null`.
+
+#### Potential errors
+
+The method can propagate the configuration, validation, lookup, and database errors documented for [ConfigSyncService](config-sync.md).
+
+#### Example
+
+=== "TypeScript"
+    ```typescript
+    const subscrio = new Subscrio({
+      database: { connectionString: process.env.DATABASE_URL! },
+      initialConfig: { type: 'file', filePath: './subscrio.json' }
+    });
+
+    await subscrio.installSchema();
+    const report = await subscrio.runInitialConfigSync();
+    ```
+
+=== ".NET"
+    ```csharp
+    using var subscrio = new Subscrio(new SubscrioConfig
+    {
+        Database = new DatabaseConfig { ConnectionString = connectionString },
+        InitialConfig = new InitialConfigOptions { FilePath = "./subscrio.json" }
+    });
+
+    await subscrio.InstallSchemaAsync();
+    var report = await subscrio.RunInitialConfigSyncAsync();
+    ```
+
+### dropSchema
+
+#### Description
+ Removes every table created by Subscrio. When installation stored an administrator passphrase hash, the caller must provide the matching passphrase. This method is intended for local development resets or automated tests.
+
+#### Signature
+
+=== "TypeScript"
+    ```typescript
+    dropSchema(adminPassphrase?: string): Promise<void>
+    ```
+
+=== ".NET"
+    ```csharp
+    Task DropSchemaAsync(string? adminPassphrase = null)
     ```
 
 #### Inputs
 
 | Name | Type | Required | Description |
 | --- | --- | --- | --- |
-| _None_ |  |  |  |
+| `adminPassphrase` | `string` / `string?` | No | Passphrase to verify before dropping the schema. The method uses the constructor's `adminPassphrase` / `AdminPassphrase` when this argument is omitted. |
 
 #### Input Properties
 
-- None.
+- A plain text passphrase. It is checked against the stored BCrypt hash and is never persisted by the drop operation.
 
 #### Returns
 
@@ -507,12 +586,15 @@ Runs pending database migrations to update the schema to the latest version. Mig
 
 #### Expected Results
 
-- Drops every Subscrio-owned table via the installer. This is destructive and meant for local resets/tests.
+- If no administrator hash exists, the drop proceeds without a passphrase.
+- If a hash exists, the supplied or constructor-configured passphrase must match.
+- After verification, the installer drops every Subscrio-owned table and the subscription status view.
 
 #### Potential Errors
 
 | Error | When |
 | --- | --- |
+| `ValidationError` / `ValidationException` | An administrator hash exists and the passphrase is missing or does not match. |
 | `ConfigurationError` | Database refuses the drop (permissions, locks). |
 
 #### Example
@@ -520,7 +602,7 @@ Runs pending database migrations to update the schema to the latest version. Mig
 === "TypeScript"
     ```typescript
     if (process.env.NODE_ENV === 'test') {
-      await subscrio.dropSchema();
+      await subscrio.dropSchema(process.env.ADMIN_PASSPHRASE);
     }
     ```
 
@@ -528,7 +610,8 @@ Runs pending database migrations to update the schema to the latest version. Mig
     ```csharp
     if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing")
     {
-        await subscrio.DropSchemaAsync();
+        await subscrio.DropSchemaAsync(
+            Environment.GetEnvironmentVariable("ADMIN_PASSPHRASE"));
     }
     ```
 
@@ -599,6 +682,14 @@ Runs pending database migrations to update the schema to the latest version. Mig
     ```
 
 ---
+
+## Supported public surface
+
+The supported application API consists of the `Subscrio` facade, its service properties, configuration types, service input and output DTOs, error types, hook registration types, and the value-object enums used by those DTOs.
+
+The TypeScript package currently exports additional schemas, date helpers, constants, domain entities, repository interfaces, and lower-level utility functions through its root barrel. The .NET assembly also exposes persistence records, the EF context and configurations, repository implementations, mappers, validators, helpers, and domain services as public types. Those lower-level declarations are available for compatibility and testing, but they are not documented as stable application API. Consumers should use the facade and service contracts described by this site. A future major release may narrow these exports without preserving their current public shape.
+
+One lower-level TypeScript helper is intentionally supported: `convertFeatureValue`. Its conversion behavior is documented in [Feature Checker](feature-checker.md).
 
 ## Service Reference Index
 

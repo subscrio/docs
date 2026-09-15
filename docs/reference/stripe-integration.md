@@ -6,7 +6,7 @@ description: Process verified Stripe webhook events, create checkout sessions, a
 # Stripe Integration Service Reference
 
 ## Service Overview
-`StripeIntegrationService` connects verified Stripe webhook events to Subscrio customers and subscriptions. Your infrastructure is responsible for signature verification—call `processStripeEvent` only after Stripe’s SDK validates the payload. The built-in handlers now cover customer lifecycle, subscription lifecycle, successful invoices, and a helper for bootstrapping Subscrio subscriptions that reference Stripe customers/prices.
+`StripeIntegrationService` connects verified Stripe webhook events to Subscrio customers and subscriptions. Call `processStripeEvent` only after Stripe's SDK validates the payload. TypeScript can verify it through the Stripe service. .NET can verify it through `StripeConfig`. Direct Stripe SDK verification remains supported. The built-in handlers cover customer lifecycle, subscription lifecycle, successful invoices, and checkout-session creation.
 
 - Store the Subscrio customer key in Stripe metadata (`subscrioCustomerKey`) whenever you create a Stripe customer or subscription—this allows webhooks to backfill `Customer.externalBillingId` automatically.
 - Persist Stripe customer IDs in `Customer.externalBillingId`. If it’s missing, the webhook handler will backfill it using the metadata described above.
@@ -37,20 +37,104 @@ TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `Conf
 === "TypeScript"
     | Method | Description | Returns |
     | --- | --- | --- |
+    | `constructStripeEvent` | Verifies a webhook signature with `config.stripe.webhookSecret` and constructs the event | `Stripe.Event` |
     | `processStripeEvent` | Entry point for verified Stripe webhook events | `Promise<void>` |
-    | `createStripeSubscription` | Creates a local placeholder subscription; does not call Stripe | `Promise<Subscription>` |
     | `createCheckoutSession` | Generate Stripe Checkout URL with automatic customer creation and subscription linking | `Promise<{ url, sessionId }>` |
 
 === ".NET"
     | Method | Description | Returns |
     | --- | --- | --- |
     | `ProcessStripeEventAsync` | Entry point for verified Stripe webhook events | `Task` |
-    | `CreateStripeSubscriptionAsync` | Creates a local placeholder subscription; does not call Stripe | `Task<Subscription>` |
     | `CreateCheckoutSessionAsync` | Generate Stripe Checkout URL with automatic customer creation and subscription linking | `Task<(string Url, string SessionId)>` |
 
 *(Handlers invoked internally by `processStripeEvent` are described for completeness.)*
 
 ## Method Reference
+
+### constructStripeEvent and ConstructStripeEvent
+
+#### Description
+
+Verifies the `Stripe-Signature` header against the raw request body and configured webhook endpoint secret, then returns a verified Stripe event. The helper is located on the Stripe service in TypeScript and on `StripeConfig` in .NET.
+
+#### Configuration
+
+=== "TypeScript"
+    ```typescript
+    const subscrio = new Subscrio({
+      database: { connectionString: process.env.DATABASE_URL! },
+      stripe: {
+        secretKey: process.env.STRIPE_SECRET_KEY!,
+        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!
+      }
+    });
+    ```
+
+=== ".NET"
+    ```csharp
+    var stripeConfig = new StripeConfig
+    {
+        SecretKey = stripeSecretKey,
+        WebhookSecret = stripeWebhookSecret
+    };
+
+    using var subscrio = new Subscrio(new SubscrioConfig
+    {
+        Database = databaseConfig,
+        Stripe = stripeConfig
+    });
+    ```
+
+#### Signature
+
+=== "TypeScript"
+    ```typescript
+    constructStripeEvent(
+      payload: string | Buffer,
+      signatureHeader: string
+    ): Stripe.Event
+    ```
+
+=== ".NET"
+    ```csharp
+    Stripe.Event ConstructStripeEvent(
+        string json,
+        string signatureHeader
+    )
+    ```
+
+#### Inputs
+
+| Name | Type | Required | Description |
+| --- | --- | --- | --- |
+| `payload` / `json` | `string \| Buffer` / `string` | Yes | Raw, unparsed HTTP request body. |
+| `signatureHeader` | `string` | Yes | Complete value of the `Stripe-Signature` request header. |
+
+#### Returns
+
+A verified `Stripe.Event`. The methods are synchronous and throw before returning when verification fails.
+
+#### Potential errors
+
+| Runtime | Error | When |
+| --- | --- | --- |
+| TypeScript | `ConfigurationError` | `stripe.webhookSecret` is missing. |
+| .NET | `InvalidOperationException` | `StripeConfig.WebhookSecret` is missing. |
+| Both | Stripe SDK signature exception | The signature, timestamp, secret, or raw body is invalid. |
+
+#### Example
+
+=== "TypeScript"
+    ```typescript
+    const event = subscrio.stripe.constructStripeEvent(rawBody, signatureHeader);
+    await subscrio.stripe.processStripeEvent(event);
+    ```
+
+=== ".NET"
+    ```csharp
+    var stripeEvent = stripeConfig.ConstructStripeEvent(rawBody, signatureHeader);
+    await subscrio.Stripe.ProcessStripeEventAsync(stripeEvent);
+    ```
 
 ### processStripeEvent
 
@@ -92,8 +176,11 @@ Routes a verified `Stripe.Event` to the appropriate handler (subscription lifecy
   - `customer.subscription.updated`
   - `customer.subscription.deleted`
   - `invoice.payment_succeeded`
-- Unhandled event types are ignored (logged in development).
+- Unhandled event types are ignored. TypeScript is silent. .NET writes the event type to the console when `ASPNETCORE_ENVIRONMENT` is `Development`.
 - Missing entities (customer, plan, billing cycle, subscription) throw so you can fix data mapping.
+- Stripe subscription status mapping is `active` to `active`, `trialing` to `trial`, `canceled` to `cancelled`, `past_due` or `unpaid` to `cancellation_pending`, `incomplete` or `paused` to `pending`, and `incomplete_expired` to `expired`.
+- An unsupported Stripe subscription status throws a validation error. The subscription is not written with an unknown or permissive state.
+- Read status still comes from subscription dates. Mapping Stripe `paused` to `pending` does not persist as `pending` unless the dates also produce that status.
 
 #### Potential Errors
 
@@ -101,22 +188,20 @@ Routes a verified `Stripe.Event` to the appropriate handler (subscription lifecy
 | --- | --- |
 | `NotFoundError` | Customer, billing cycle, plan, or subscription cannot be resolved. |
 | `ValidationError` | Required data such as `externalBillingId` is missing. |
+| `ValidationError` | The Stripe subscription status is unsupported. |
+| `ConflictError` (TypeScript) | Metadata identifies a Subscrio customer whose `externalBillingId` already points to a different Stripe customer. TypeScript refuses to overwrite it. The current .NET implementation overwrites it. |
 
 #### Example
 
 === "TypeScript"
     ```typescript
-    import Stripe from 'stripe';
-
-    const event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+    const event = stripeService.constructStripeEvent(body, sig);
     await stripeService.processStripeEvent(event);
     ```
 
 === ".NET"
     ```csharp
-    using Stripe;
-
-    var stripeEvent = EventUtility.ConstructEvent(body, sig, webhookSecret);
+    var stripeEvent = config.Stripe!.ConstructStripeEvent(body, sig);
     await stripeService.ProcessStripeEventAsync(stripeEvent);
     ```
 
@@ -139,86 +224,6 @@ Routes a verified `Stripe.Event` to the appropriate handler (subscription lifecy
   - Calls `subscription.expire()` when Stripe marks the subscription deleted so the computed status becomes `expired`.
 - **`handlePaymentSucceeded`**
   - Updates the subscription’s `currentPeriodStart`/`currentPeriodEnd` from the invoice line’s billing period after a successful payment.
-
-### createStripeSubscription
-
-#### Description
-Creates a local Subscrio subscription with a placeholder `stripeSubscriptionId` (`sub_placeholder_{timestamp}`). It does not call the Stripe API. `stripePriceId` is unused. Prefer `createCheckoutSession` plus `processStripeEvent` for a real Stripe subscription.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    createStripeSubscription(
-      customerKey: string,
-      planKey: string,
-      billingCycleKey: string,
-      stripePriceId: string
-    ): Promise<Subscription>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<Subscription> CreateStripeSubscriptionAsync(
-        string customerKey,
-        string planKey,
-        string billingCycleKey,
-        string stripePriceId
-    )
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `customerKey` | `string` | Yes | Customer key (must have `externalBillingId`). |
-| `planKey` | `string` | Yes | Plan being subscribed to. |
-| `billingCycleKey` | `string` | Yes | Billing cycle governing the cadence. |
-| `stripePriceId` | `string` | Yes | Stripe price identifier (stored for reference). |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<Subscription>` – the saved domain subscription (with placeholder `stripeSubscriptionId`).
-
-=== ".NET"
-    `Task<Subscription>` – the saved domain entity (not a DTO). `Key` is generated. `StripeSubscriptionId` is a placeholder.
-
-#### Expected Results
-- Validates entities and ensures customer has `externalBillingId`.
-- Generates a subscription key, sets activation/current period timestamps, and saves a local subscription.
-- Sets `stripeSubscriptionId` to `sub_placeholder_{timestamp}`. It does not create a Stripe subscription. Webhooks can later attach a real Stripe ID if you pass the metadata described above.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Customer, plan, or billing cycle missing. |
-| `ValidationError` | Customer lacks `externalBillingId`. |
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    const sub = await stripeService.createStripeSubscription(
-      'cust_123',
-      'pro-plan',
-      'pro-plan-annual',
-      'price_ABC123'
-    );
-    console.log(sub.key);
-    ```
-
-=== ".NET"
-    ```csharp
-    var sub = await stripeService.CreateStripeSubscriptionAsync(
-        "cust_123",
-        "pro-plan",
-        "pro-plan-annual",
-        "price_ABC123"
-    );
-    Console.WriteLine(sub.Key);
-    ```
 
 ### createCheckoutSession
 
@@ -447,7 +452,7 @@ When a customer completes checkout, the webhook handler will:
     ```
 
 ## Related Workflows
-- **Webhook verification** – Your HTTP endpoint must verify Stripe signatures with `stripe.webhooks.constructEvent` (or equivalent) before calling `processStripeEvent`.
+- Webhook verification: verify through `subscrio.stripe.constructStripeEvent`, `StripeConfig.ConstructStripeEvent`, or the Stripe SDK before calling the processing method.
 - **Customer metadata** – Attach `subscrioCustomerKey` (and optionally `subscrioSubscriptionKey`) to every Stripe customer and subscription you create so Subscrio can reconcile records automatically.
 - **Billing-cycle mapping** – Store Stripe price IDs in `BillingCycle.externalProductId` to map subscriptions/billing cycles accurately.
 - **How-to guide** – See [How to Integrate with Stripe](how-to-integrate-with-stripe.md) for setup, metadata, and webhook handling.
@@ -458,3 +463,5 @@ When a customer completes checkout, the webhook handler will:
 
 === ".NET"
     `ProcessStripeEventAsync` emits `stripe.received.before`, then customer/subscription before/after hooks with `Source: "stripe"`, then `stripe.received.after`.
+
+The event supplied to `stripe.received.before` is a snapshot. Throwing from the hook aborts processing, but mutating the snapshot does not change the event handled by `processStripeEvent` or `ProcessStripeEventAsync`.

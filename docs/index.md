@@ -63,7 +63,7 @@ Subscrio does not process payments, run feature rollouts, replace RBAC, or activ
 
 ## Stripe events
 
-The Stripe integration accepts supported, verified events and maintains the matching customer subscription data. If your application receives the webhook, verify its signature before passing it to Subscrio. The optional [Subscrio Web Admin](https://subscrio.com/admin/) can act as the Stripe webhook endpoint instead.
+The Stripe integration accepts supported, verified events and maintains the matching customer subscription data. If your application receives the webhook, verify its signature before passing it to Subscrio. TypeScript can verify with `subscrio.stripe.constructStripeEvent`. .NET can verify with `StripeConfig.ConstructStripeEvent`. The optional [Subscrio Web Admin](https://subscrio.com/admin/) can act as the Stripe webhook endpoint instead.
 
 [Integrate Stripe events](reference/how-to-integrate-with-stripe.md).
 

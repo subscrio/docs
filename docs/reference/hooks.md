@@ -31,27 +31,41 @@ See also: [How to Extend](./how-to-extend.md) for packaging extensions and the a
     var hooks = subscrio.Hooks;
     ```
 
-## Before vs After
+## Before and after
 
 | Phase | Event suffix | When it runs | Mutate `new`? | Throw aborts write? |
 | --- | --- | --- | --- | --- |
-| `before` | `*.before` | After the proposed DTO is built, **before** the database write | Yes (applied to the entity before persist) | Yes — mutation does not run |
-| `after` | `*.after` | **After** a successful database write | No — `new` is an immutable clone of the persisted DTO | No — row already committed; API still throws |
+| `before` | `*.before` | After the proposed DTO is built, before the database write | Only the supported fields described below | Yes. The write is aborted. |
+| `after` | `*.after` | After a successful database write | No. The DTO is a snapshot and changes are not persisted. | No. The row is already committed, but the API still throws. |
 
 - Handlers are awaited sequentially. The first throw stops remaining handlers for that emit.
 - Payload data is loaded/built **only when at least one listener is registered** for that event. Multiple handlers share one payload (built once).
 - Each domain event includes `source`: `api` | `stripe` | `system`.
 - Each domain event includes `phase`: `before` | `after`.
 
-## Mutation Rules (`before` only)
+## Mutation rules for `before` hooks
 
-- Handlers may mutate fields on `evt.new` (or `evt.New` in .NET).
-- Subscrio applies those fields onto the domain entity before persist.
-- Identity fields:
-  - On **create**, changing `key` via a before-hook is allowed (conflict checks re-run).
-  - On **update**, changing `key` via a before-hook is rejected.
-- Status transitions for archive/unarchive are still driven by the service (entity methods), not by free-form status edits alone.
-- `after` payloads clone DTOs; mutations to `new` are not applied.
+- Handlers may mutate fields on `evt.new` (or `evt.New` in .NET), but the runtime copies only selected fields back to the record.
+- On create, changing `key` is allowed and conflict checks run again. On update, changing `key` is rejected.
+- API create operations revalidate the resulting customer or subscription. API update operations validate the caller's input before the hook but do not run the update validator again after hook mutations.
+- Archive and unarchive operations force their intended state after the hook runs. A hook cannot cancel the lifecycle state change by editing `status` or `isArchived`.
+- `after` payloads are mutable snapshots. Changing them has no effect on the completed write.
+
+### Fields copied from customer hooks
+
+| Runtime | Fields copied from `new` | Important limits |
+| --- | --- | --- |
+| TypeScript | `key` on create, `displayName`, `email`, `externalBillingId`, `metadata` | `status` is not copied. |
+| .NET | `Key` on create, `DisplayName`, `Email`, `ExternalBillingId`, `Status`, `Metadata` | Archive and unarchive overwrite `Status` with the requested lifecycle state after the hook. |
+
+### Fields copied from subscription hooks
+
+| Runtime | Fields copied from `new` | Important limits |
+| --- | --- | --- |
+| TypeScript | `key` on create, lifecycle dates except `activationDate`, `stripeSubscriptionId`, `metadata` | `activationDate`, `isArchived`, and relationship keys are not copied to the record. A changed relationship key on create may be validated but is not persisted. |
+| .NET | `Key` on create, `IsArchived`, all lifecycle dates, `StripeSubscriptionId`, `Metadata` | Relationship keys are not copied during updates. On create only, changed `CustomerKey` and `BillingCycleKey` are resolved again, and the plan and product follow the new billing cycle. |
+
+For feature-override hooks, mutations to the subscription snapshot use the same copy rules. The override-specific `value` and `overrideType` fields are handled separately by the override operation.
 
 ## `entityId` and `customerId`
 
@@ -66,12 +80,12 @@ Typical values:
 - `*.created.after`: `entityId` is set to the new PK.
 - Update / archive / delete before and after: `entityId` is set when the row already exists.
 
-## Throw Semantics
+## Throw semantics
 
 | Hook | Effect of throw |
 | --- | --- |
 | `*.before` | Operation aborted. Nothing is written for that mutation. |
-| `*.after` | Database write has already committed. The public API call still rejects/throws. Callers must treat the row as persisted. |
+| `*.after` | Database write has already committed. The public API call still rejects or throws. Callers must treat the row as persisted. |
 | `stripe.received.before` | `processStripeEvent` aborts before handling the Stripe payload. |
 | `stripe.received.after` | Stripe handling already finished. The API call still throws. |
 
@@ -139,23 +153,25 @@ Event names use the pattern `{resource}.{action}.{before\|after}`.
 
     `TransitionExpiredSubscriptionsAsync()` emits normal per-row before/after events with `Source: "system"`.
 
-### Stripe Inbound
+### Stripe inbound
 
 === "TypeScript"
     | Event string | `HookEvents` constant | When | Payload |
     | --- | --- | --- | --- |
-    | `stripe.received.before` | `StripeReceivedBefore` | Start of `processStripeEvent`, before domain handling | Full verified Stripe event |
-    | `stripe.received.after` | `StripeReceivedAfter` | End of `processStripeEvent`, after domain handling | Full verified Stripe event |
+    | `stripe.received.before` | `StripeReceivedBefore` | Start of `processStripeEvent`, before domain handling | Snapshot of the supplied Stripe event |
+    | `stripe.received.after` | `StripeReceivedAfter` | End of `processStripeEvent`, after domain handling | Snapshot of the supplied Stripe event |
 
     Domain customer/subscription hooks for resulting writes still fire between these with `source: 'stripe'`.
 
 === ".NET"
     | Event string | Register with | When | Payload |
     | --- | --- | --- | --- |
-    | `stripe.received.before` | `OnStripeReceivedBefore` | Start of `ProcessStripeEventAsync` | Full verified Stripe event |
-    | `stripe.received.after` | `OnStripeReceivedAfter` | End of `ProcessStripeEventAsync` | Full verified Stripe event |
+    | `stripe.received.before` | `OnStripeReceivedBefore` | Start of `ProcessStripeEventAsync` | Snapshot of the supplied Stripe event |
+    | `stripe.received.after` | `OnStripeReceivedAfter` | End of `ProcessStripeEventAsync` | Snapshot of the supplied Stripe event |
 
     Domain customer/subscription hooks for resulting writes still fire between these with `Source: "stripe"`.
+
+`processStripeEvent` and `ProcessStripeEventAsync` expect an event that the caller has already verified. Use `constructStripeEvent` in TypeScript or `StripeConfig.ConstructStripeEvent` in .NET before processing a raw webhook request. Mutating `data` in `stripe.received.before` does not alter the event that the processor handles.
 
 ## Payload Shape
 
@@ -174,7 +190,7 @@ Event names use the pattern `{resource}.{action}.{before\|after}`.
       entityId: number | null;
       customerId?: number | null; // subscription events
       old: T | null;
-      /** before: mutable proposed DTO; after: immutable clone of persisted DTO */
+      /** before: mutable proposed DTO; after: snapshot of persisted DTO */
       new: T | null;
     }
 

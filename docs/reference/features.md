@@ -10,6 +10,7 @@ The Feature Management Service defines entitlement toggles and typed values that
 
 - Feature keys are immutable and globally unique.
 - `valueType` determines how defaults, plan values, and overrides are validated (`toggle`, `numeric`, `text`).
+- Toggle values accept `"true"` or `"false"` without regard to case (`TRUE` and `False` are valid).
 - Features cannot be deleted while referenced by products, plan feature values, or subscription overrides.
 
 TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
@@ -85,7 +86,7 @@ Creates a new feature, validating keys, default values, and optional metadata be
     | `displayName` | `string` | Yes | 1–255 char label. |
     | `description` | `string` | No | ≤1000 chars. |
     | `valueType` | `'toggle' \| 'numeric' \| 'text'` | Yes | Controls validation rules. |
-    | `defaultValue` | `string` | Yes | Must conform to `valueType`. |
+    | `defaultValue` | `string` | Yes | Must conform to `valueType`. Toggle accepts `"true"` or `"false"` ignoring case. |
     | `groupName` | `string` | No | Optional grouping label. |
     | `validator` | `Record<string, unknown>` | No | Custom metadata for downstream validation. |
     | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata blob. |
@@ -123,7 +124,7 @@ Creates a new feature, validating keys, default values, and optional metadata be
     | `DisplayName` | `string` | Yes | 1–255 char label. |
     | `Description` | `string` | No | ≤1000 chars. |
     | `ValueType` | `string` | Yes | `toggle`, `numeric`, or `text`. |
-    | `DefaultValue` | `string` | Yes | Must conform to `ValueType`. |
+    | `DefaultValue` | `string` | Yes | Must conform to `ValueType`. Toggle accepts `"true"` or `"false"` ignoring case. |
     | `GroupName` | `string` | No | Optional grouping label. |
     | `Validator` | `Dictionary<string, object?>` | No | Custom metadata for downstream validation. |
     | `Metadata` | `Dictionary<string, object?>` | No | JSON-safe metadata blob. |
@@ -142,7 +143,7 @@ Creates a new feature, validating keys, default values, and optional metadata be
     ```
 
 #### Expected Results
-- Validates DTO fields and default value using `FeatureValueValidator`.
+- Validates DTO fields and default value using `FeatureValueValidator`. Toggle `"TRUE"` / `"FALSE"` is accepted.
 - Ensures key uniqueness.
 - Persists feature with `active` status.
 
@@ -156,7 +157,7 @@ Creates a new feature, validating keys, default values, and optional metadata be
 ### updateFeature
 
 #### Description
-Applies partial updates (display name, description, default value, grouping, validator, metadata) to an existing feature.
+Applies partial updates to an existing feature, including its value type and default value.
 
 === "TypeScript"
     #### Signature
@@ -207,14 +208,15 @@ Applies partial updates (display name, description, default value, grouping, val
     ```
 
 #### Expected Results
-- Validates provided fields and default/valueType compatibility.
-- Loads feature, applies updates, recalculates timestamps, and saves.
+- Validates the supplied fields and persists a `valueType` or `ValueType` change.
+- When the value type changes, validates the effective default against the new type. The effective default is the supplied default or, when omitted, the feature's existing default.
+- Loads the feature, applies updates, refreshes timestamps, and saves.
 
 #### Potential Errors
 
 | Error | When |
 | --- | --- |
-| `ValidationError` | DTO invalid or default fails validation. |
+| `ValidationError` | The DTO is invalid, the value type is unknown, or the effective default does not satisfy the resulting value type. |
 | `NotFoundError` | Feature key not found. |
 
 ### getFeature
@@ -557,7 +559,7 @@ Returns all features currently associated with a product.
     | `displayName` | `string` | Yes | 1–255 chars. |
     | `description` | `string` | No | ≤1000 chars. |
     | `valueType` | `'toggle' \| 'numeric' \| 'text'` | Yes | Determines validation rules. |
-    | `defaultValue` | `string` | Yes | Must match `valueType`. |
+    | `defaultValue` | `string` | Yes | Must match `valueType`. Toggle accepts `"true"` or `"false"` ignoring case. |
     | `groupName` | `string` | No | ≤255 chars. |
     | `validator` | `Record<string, unknown>` | No | Custom validation metadata. |
     | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
@@ -569,22 +571,22 @@ Returns all features currently associated with a product.
     | `DisplayName` | `string` | Yes | 1–255 chars. |
     | `Description` | `string` | No | ≤1000 chars. |
     | `ValueType` | `string` | Yes | `toggle`, `numeric`, or `text`. |
-    | `DefaultValue` | `string` | Yes | Must match `ValueType`. |
+    | `DefaultValue` | `string` | Yes | Must match `ValueType`. Toggle accepts `"true"` or `"false"` ignoring case. |
     | `GroupName` | `string` | No | ≤255 chars. |
     | `Validator` | `Dictionary<string, object?>` | No | Custom validation metadata. |
     | `Metadata` | `Dictionary<string, object?>` | No | JSON-safe metadata. |
 
 ### UpdateFeatureDto
 
-`key` is immutable and is not on this DTO. `valueType` is accepted by the schema/validator and is **not written**. A new `defaultValue` is validated against the existing feature type.
+`key` is immutable and is not on this DTO. A supplied value type is persisted. The supplied or existing default value must be valid for the resulting type.
 
 === "TypeScript"
     | Field | Type | Required | Constraints |
     | --- | --- | --- | --- |
     | `displayName` | `string` | No | 1–255 chars. |
     | `description` | `string` | No | ≤1000 chars. |
-    | `valueType` | `'toggle' \| 'numeric' \| 'text'` | No | Accepted and ignored. |
-    | `defaultValue` | `string` | No | Must match the existing feature type. |
+    | `valueType` | `'toggle' \| 'numeric' \| 'text'` | No | Replaces the stored feature type. |
+    | `defaultValue` | `string` | No | Must match the resulting feature type. |
     | `groupName` | `string` | No | ≤255 chars. |
     | `validator` | `Record<string, unknown>` | No | Custom validation metadata. |
     | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
@@ -594,8 +596,8 @@ Returns all features currently associated with a product.
     | --- | --- | --- | --- |
     | `DisplayName` | `string?` | No | 1–255 chars. |
     | `Description` | `string?` | No | ≤1000 chars. |
-    | `ValueType` | `string?` | No | Accepted and ignored. |
-    | `DefaultValue` | `string?` | No | Must match the existing feature type. |
+    | `ValueType` | `string?` | No | Replaces the stored feature type. Case-insensitive enum parsing is used. |
+    | `DefaultValue` | `string?` | No | Must match the resulting feature type. |
     | `GroupName` | `string?` | No | ≤255 chars. |
     | `Validator` | `Dictionary<string, object?>?` | No | Custom validation metadata. |
     | `Metadata` | `Dictionary<string, object?>?` | No | JSON-safe metadata. |

@@ -5,7 +5,7 @@ description: How Subscrio computes pending, trial, active, cancellation_pending,
 
 # Subscription lifecycle
 
-A subscription's `status` is calculated from its dates each time you read it, so you do not update the status directly. Both SDKs use the same rules: TypeScript reads the `subscrio.subscription_status_view` SQL view, while .NET applies the equivalent logic in `SubscriptionMapper.ComputeStatus`.
+A subscription's `status` is calculated from its dates each time you read it, so you do not update the status directly. Normal repository reads use the `subscrio.subscription_status_view`. Domain mappings can apply the equivalent in-process calculation when they do not read through the view.
 
 This page explains which date wins when several are set, the usual paths between statuses, and how to configure the end of a trial.
 
@@ -14,7 +14,7 @@ This page explains which date wins when several are set, the usual paths between
 
 ## How status is calculated
 
-Subscrio does not calculate each status from one date in isolation. It evaluates an ordered decision tree against the current time and returns as soon as a condition matches. The PostgreSQL view used by normal reads and the .NET application fallback implement the same sequence:
+Subscrio does not calculate each status from one date in isolation. It evaluates an ordered decision tree against the current time and returns as soon as a condition matches. The database views and application fallback implement the same sequence:
 
 ```text
 if cancellationDate is set:
@@ -33,7 +33,7 @@ if trialEndDate is set and trialEndDate > now:
 return active
 ```
 
-The database implementation compares the stored timestamps with PostgreSQL `NOW()`. The .NET fallback captures `DateHelper.Now()` once, which returns `DateTime.UtcNow`, and compares every date with that value.
+The TypeScript PostgreSQL view compares timestamps with `NOW()`. TypeScript does not run this view on SQL Server. .NET installs a provider-specific view that uses `NOW()` for PostgreSQL or `GETUTCDATE()` for SQL Server. The .NET application fallback captures `DateHelper.Now()` once, which returns `DateTime.UtcNow`, and compares every date with that value.
 
 ### Complete conditions after precedence
 
@@ -149,9 +149,8 @@ An expired subscription can move automatically to another billing cycle. This is
 The transition job:
 
 1. Finds expired subscriptions whose plans have a transition target.
-2. Archives the old subscription and records the time in `transitioned_at`.
-3. Creates a subscription for the target billing cycle.
-4. Versions the key, such as `original-key` to `original-key-v1`, then `original-key-v2`.
+2. Builds and persists a replacement subscription for the target billing cycle, using a versioned key such as `original-key-v1` or `original-key-v2`.
+3. Archives the old subscription and records the time in `transitioned_at` only after the replacement is saved.
 
 The new subscription keeps the old metadata but not its feature overrides. The original Stripe subscription ID stays on the archived record for historical reference.
 
@@ -384,7 +383,7 @@ Once `expirationDate` is reached, the subscription becomes `expired`. Run the tr
 
 #### Result of the transition
 
-The job archives the trial subscription, sets its `transitioned_at` timestamp, and creates the replacement. The new key is versioned from `customer-123-pro-trial` to `customer-123-pro-trial-v1`. Metadata carries over, but feature overrides do not. The old Stripe subscription ID remains on the archived record.
+The job creates the replacement first. After that save succeeds, it archives the trial subscription and sets its `transitioned_at` timestamp. The new key is versioned from `customer-123-pro-trial` to `customer-123-pro-trial-v1`. Metadata carries over, but feature overrides do not. The old Stripe subscription ID remains on the archived record.
 
 The replacement subscription looks like this:
 
@@ -492,9 +491,9 @@ The record remains in the database for history, but its status is `expired` and 
 
 ## Common operations
 
-- To leave a trial immediately, remove `trialEndDate` or move it into the past.
+- To leave a trial immediately, call the update method with `clearTrialEndDate: true` or `ClearTrialEndDate: true`. You can also replace the trial end with a past date.
 - To cancel at the end of the current period, set `cancellationDate` to that period's end. The subscription remains accessible as `cancellation_pending` until then.
-- To undo a scheduled cancellation, remove `cancellationDate`. The other dates then determine whether the subscription is `trial`, `active`, or another status.
+- The current update DTOs cannot explicitly clear `cancellationDate`. If your application must undo a scheduled cancellation, handle that limitation in its data workflow until a clear flag is added to the public API.
 - Subscription APIs do not include `suspend()` or `resume()`. `suspended` applies to customers instead.
 
 Refer back to [Subscriptions](subscriptions.md) for lifecycle-related APIs (`archiveSubscription`, `unarchiveSubscription`, `clearTemporaryOverrides`, `transitionExpiredSubscriptions`), and to [Feature Checker](feature-checker.md) for how these statuses affect runtime feature access.

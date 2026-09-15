@@ -12,7 +12,9 @@ The Feature Checker service evaluates feature values at runtime. Every method en
 
 The service answers questions at both subscription and customer levels, exposes plan-access helpers, and can summarize usage patterns. Results draw from `FeatureValueResolver`, so the hierarchy is consistent everywhere.
 
-Resolved values are stored as strings. The generic type parameter is a cast, not a parser. Use `string` (or parse after you get the value). In .NET, `GetValueForCustomerAsync<int>` throws because a string cannot be unboxed to `int`.
+Resolved values are stored as strings, then converted by the typed getter. TypeScript infers the target from `defaultValue`: string, boolean, and number are supported. Without a default it returns a string. .NET converts to `string`, `bool`, numeric primitives, `decimal`, or `Guid` from the generic type. A failed or unsupported conversion returns the supplied default, or `null` / the type's default when no fallback exists.
+
+TypeScript also exports `convertFeatureValue(value, defaultValue?, valueType?)`. Its explicit `valueType` can be `string`, `boolean`, or `number`. Boolean conversion in both libraries accepts `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`, ignoring case where applicable.
 
 ## Accessing the Service
 
@@ -86,14 +88,14 @@ Resolves a feature value for a single subscription using override → plan value
     | `defaultValue` | `T` | No | Optional fallback when any entity is missing. |
 
     #### Returns
-    `Promise<T | null>` – resolved value (cast to `T` when provided) or `defaultValue ?? null`.
+    `Promise<T | null>`. The resolved value is converted according to the runtime type of `defaultValue`. Conversion failure returns `defaultValue ?? null`.
 
     #### Example
     ```typescript
     const seats = await featureChecker.getValueForSubscription(
       'sub_1001',
       'seat-limit',
-      '0'
+      0
     );
     ```
 
@@ -116,20 +118,21 @@ Resolves a feature value for a single subscription using override → plan value
     | `defaultValue` | `T?` | No | Optional fallback when any entity is missing. |
 
     #### Returns
-    `Task<T?>` – resolved value or `defaultValue ?? null`.
+    `Task<T?>`. The resolved value is converted to `T`. Conversion failure returns the supplied or type-default value.
 
     #### Example
     ```csharp
-    var seats = await subscrio.FeatureChecker.GetValueForSubscriptionAsync<string>(
+    var seats = await subscrio.FeatureChecker.GetValueForSubscriptionAsync<int>(
         "sub_1001",
         "seat-limit",
-        "0"
+        0
     );
     ```
 
 #### Expected Results
 - Loads subscription, plan, and feature.
 - Applies resolver hierarchy; if any entity is missing returns fallback rather than throwing.
+- Converts the stored string to the requested supported type. A failed conversion returns the fallback.
 
 #### Potential Errors
 - None.
@@ -254,7 +257,7 @@ Resolves every feature for the subscription's product, returning a map of `featu
 ### getValueForCustomer
 
 #### Description
-Resolves a feature for a customer/product pair by scanning that customer's subscriptions for the product. TypeScript `findByCustomerId` does not apply the requested limit. .NET loads up to 100 subscriptions (`MAX_SUBSCRIPTIONS_PER_CUSTOMER`).
+Resolves a feature for a customer/product pair by scanning up to 100 of that customer's subscriptions. Both repositories apply the `MAX_SUBSCRIPTIONS_PER_CUSTOMER` limit.
 
 === "TypeScript"
     #### Signature
@@ -325,7 +328,7 @@ Resolves a feature for a customer/product pair by scanning that customer's subsc
 #### Expected Results
 - Loads customer, product, and feature; returns fallback when any missing.
 - Fetches subscriptions for the customer, filters to active/trial entries for the product.
-- Applies resolver across subscriptions, honoring override precedence if multiple subscriptions exist.
+- For each feature, the first subscription override wins. If no override exists, the first encountered plan value wins. The feature default is used only when no applicable plan supplies a value.
 
 #### Potential Errors
 - None.
@@ -534,7 +537,7 @@ Checks whether a customer currently holds an active or trial subscription for a 
 ### getActivePlans
 
 #### Description
-Lists plan keys for the customer's subscriptions. The method name says "active" but the implementation does not filter by status. It loads up to 100 subscriptions and returns those plan keys.
+Lists distinct plan keys from up to 100 active or trial subscriptions for the customer.
 
 === "TypeScript"
     #### Signature
@@ -549,7 +552,7 @@ Lists plan keys for the customer's subscriptions. The method name says "active" 
     | `customerKey` | `string` | Yes | Customer identifier. |
 
     #### Returns
-    `Promise<string[]>` – empty array when the customer is missing or has no subscriptions. Status is not filtered.
+    `Promise<string[]>`. Returns distinct active or trial plan keys, or an empty array when the customer is missing or has no qualifying subscriptions.
 
     #### Example
     ```typescript
@@ -569,7 +572,7 @@ Lists plan keys for the customer's subscriptions. The method name says "active" 
     | `customerKey` | `string` | Yes | Customer identifier. |
 
     #### Returns
-    `Task<List<string>>` – empty list when the customer is missing or has no subscriptions. Status is not filtered.
+    `Task<List<string>>`. Returns distinct active or trial plan keys, or an empty list when the customer is missing or has no qualifying subscriptions.
 
     #### Example
     ```csharp
@@ -577,8 +580,8 @@ Lists plan keys for the customer's subscriptions. The method name says "active" 
     ```
 
 #### Expected Results
-- Loads customer and their subscriptions.
-- Batch-fetches plans to avoid N+1 queries and returns plan keys.
+- Loads up to 100 customer subscriptions and keeps only active or trial entries.
+- Batch-fetches plans, deduplicates their keys, and returns the result.
 
 #### Potential Errors
 - None.
@@ -586,7 +589,7 @@ Lists plan keys for the customer's subscriptions. The method name says "active" 
 ### getFeatureUsageSummary
 
 #### Description
-Produces a usage rollup showing how features resolve (enabled/disabled/numeric/text) for a customer/product pair and includes the customer's subscription count.
+Produces a usage rollup showing how features resolve (enabled/disabled/numeric/text) for a customer/product pair. Its subscription count includes only active or trial subscriptions whose plans belong to the requested product.
 
 === "TypeScript"
     #### Signature
@@ -645,7 +648,7 @@ Produces a usage rollup showing how features resolve (enabled/disabled/numeric/t
     ```
 
 #### Expected Results
-- Counts the customer's subscriptions (regardless of product filter).
+- Counts active or trial subscriptions for the requested product, within the 100-subscription customer cap.
 - Resolves all product features (using defaults when customer/product missing) and classifies values by `FeatureDto.valueType`.
 
 #### Potential Errors

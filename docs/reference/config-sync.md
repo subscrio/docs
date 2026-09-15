@@ -489,6 +489,10 @@ Entities that exist in both config and database are updated:
 - Keys are immutable and cannot be changed
 - Archive status is handled separately (see below)
 
+There is one plan-specific exception. Omitting `onExpireTransitionToBillingCycleKey` from a plan configuration clears an existing expiration transition. Both libraries implement that omission by setting the plan update DTO's explicit transition-clear flag. Include the target on every sync when the transition should remain configured.
+
+Before comparing state, both libraries page through all existing products, features, plans, and billing cycles in batches of up to 100. Sync therefore reconciles the complete catalog rather than only the first list page. Database work grows with the full catalog size.
+
 ### Archive Operations
 
 The `archived` boolean property controls entity status:
@@ -644,7 +648,7 @@ The sync service performs comprehensive validation:
 - `onExpireTransitionToBillingCycleKey` must reference a valid billing cycle in any plan within the same product
 
 ### Feature Value Validation
-- Toggle features: values must be `"true"` or `"false"`
+- Toggle features: values must be `"true"` or `"false"` (case-insensitive)
 - Numeric features: values must be valid numbers
 - Text features: any string value is accepted
 
@@ -1002,6 +1006,8 @@ Use `archived: true` to mark entities as archived rather than deleting them:
 2. **Immutable Keys**: Keys cannot be changed after creation
 3. **Sequential Operations**: Operations run sequentially (not in a transaction)
 4. **Partial Completion**: If an error occurs, some operations may have completed
+5. **Transition Omission Clears**: A plan config without `onExpireTransitionToBillingCycleKey` removes an existing transition target
+6. **Full Catalog Read**: Every sync pages through all products, features, plans, and billing cycles before applying changes
 
 ## Troubleshooting
 

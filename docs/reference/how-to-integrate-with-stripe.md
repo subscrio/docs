@@ -10,7 +10,7 @@ This guide walks through the exact steps needed to keep Subscrio and Stripe in s
 ## Prerequisites
 
 - The `subscrio` TypeScript package or `Subscrio.Core` .NET package installed and connected to a supported database.
-- `STRIPE_SECRET_KEY` available to the private application code that receives Stripe data (never expose it to a browser interface).
+- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` available to the private application code that receives Stripe data. Never expose either secret to a browser interface.
 - Ability to configure Stripe webhooks and create customers/subscriptions via the Stripe API or dashboard.
 
 ## 1. Map Stripe prices to billing cycles
@@ -102,25 +102,29 @@ When you create a Stripe subscription (through Checkout, Billing Portal, or the 
 Your HTTP endpoint must:
 
 1. Read the **raw** request body (do not JSON-parse first).
-2. Verify the signature with Stripe's SDK.
+2. Verify the signature with Subscrio's wrapper or directly with Stripe's SDK.
 3. Pass the verified event to Subscrio's Stripe service.
 
 === "TypeScript (Express)"
     ```typescript
     import express from 'express';
-    import Stripe from 'stripe';
     import { Subscrio } from 'subscrio';
 
     const app = express();
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-    const subscrio = new Subscrio({ database: { connectionString: process.env.DATABASE_URL! } });
+    const subscrio = new Subscrio({
+      database: { connectionString: process.env.DATABASE_URL! },
+      stripe: {
+        secretKey: process.env.STRIPE_SECRET_KEY!,
+        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!
+      }
+    });
 
     app.post('/webhooks/stripe',
       express.raw({ type: 'application/json' }),
       async (req, res) => {
         try {
           const sig = req.headers['stripe-signature']!;
-          const event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+          const event = subscrio.stripe.constructStripeEvent(req.body, sig);
           await subscrio.stripe.processStripeEvent(event);
           res.json({ received: true });
         } catch (error) {
@@ -132,9 +136,17 @@ Your HTTP endpoint must:
     ```
 
 === ".NET (ASP.NET Core)"
+    Use the same `StripeConfig` instance in the root `SubscrioConfig.Stripe` property and in the webhook endpoint.
+
     ```csharp
-    using Stripe;
     using Subscrio.Core;
+    using Subscrio.Core.Config;
+
+    var stripeConfig = new StripeConfig
+    {
+        SecretKey = stripeSecretKey,
+        WebhookSecret = webhookSecret
+    };
 
     app.MapPost("/webhooks/stripe", async (HttpContext context, Subscrio subscrio) =>
     {
@@ -142,14 +154,16 @@ Your HTTP endpoint must:
         var body = await reader.ReadToEndAsync();
         var sig = context.Request.Headers["Stripe-Signature"].ToString();
 
-        var stripeEvent = EventUtility.ConstructEvent(body, sig, webhookSecret);
+        var stripeEvent = stripeConfig.ConstructStripeEvent(body, sig);
         await subscrio.Stripe.ProcessStripeEventAsync(stripeEvent);
 
         return Results.Ok(new { received = true });
     }).DisableAntiforgery();  // Webhooks need raw body, disable antiforgery for this route
     ```
 
-Never call `processStripeEvent` / `ProcessStripeEventAsync` with unverified JSON—Subscrio assumes the payload is genuine once it reaches the service.
+Never call `processStripeEvent` / `ProcessStripeEventAsync` with unverified JSON. Subscrio assumes the payload is genuine once it reaches the service.
+
+TypeScript throws `ConfigurationError` when `stripe.webhookSecret` is missing. .NET throws `InvalidOperationException` when `StripeConfig.WebhookSecret` is missing. Stripe's SDK throws its signature exception when the raw body, signature header, timestamp, or secret is invalid.
 
 ## 4. Required Stripe events
 

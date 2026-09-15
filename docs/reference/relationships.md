@@ -37,7 +37,7 @@ When calling `FeatureCheckerService`, values always resolve in this order:
 2. **Plan value** – The plan’s configured feature value.
 3. **Feature default** – The default defined on the feature itself.
 
-A feature has at most one override per subscription; a later write replaces the stored value. When a customer holds multiple subscriptions for the same product, the first override in repository fetch order wins. If no override exists, the first resolved plan or default value is used. See [Feature Checker](feature-checker.md).
+A feature has at most one override per subscription; a later write replaces the stored value. When a customer holds multiple active or trial subscriptions for the same product, repository fetch order determines precedence. The first subscription override wins. If no subscription supplies an override, the first encountered plan value wins. The feature default is used only when none of those plans supplies a value. Customer-level checks inspect at most 100 subscriptions. See [Feature Checker](feature-checker.md).
 
 ## Customer Keys
 

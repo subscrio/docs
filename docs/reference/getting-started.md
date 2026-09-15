@@ -9,7 +9,7 @@ This guide installs the library, defines a small entitlement catalog, assigns a 
 
 ## Prerequisites
 
-- An existing database: PostgreSQL for TypeScript, or PostgreSQL or SQL Server for .NET.
+- An existing database: PostgreSQL for TypeScript. PostgreSQL or SQL Server for .NET. TypeScript `new Subscrio()` requires PostgreSQL for schema and queries.
 
 === "TypeScript"
     Install the published package in your application:
@@ -359,7 +359,7 @@ Use the Feature Checker service to evaluate the final resolved values.
     Console.WriteLine($"Max projects: {maxProjects}, Has analytics: {hasAnalytics}");
     ```
 
-Results obey the hierarchy: subscription override → plan value → feature default. Resolved values are strings. The generic type parameter does not parse numbers or booleans.
+Results obey the hierarchy: subscription override → plan value → feature default. Values are stored as strings, but typed getters convert them when you supply a typed default. TypeScript supports string, boolean, and number conversion. .NET also supports numeric primitives, `decimal`, and `Guid` through the generic target type.
 
 ## Where to Go Next
 

@@ -190,6 +190,7 @@ Applies partial updates such as display name, description, transition target, or
     | `displayName` | `string` | No | Updated label. |
     | `description` | `string` | No | New description. |
     | `onExpireTransitionToBillingCycleKey` | `string` | No | Replacement transition target. |
+    | `clearOnExpireTransitionToBillingCycleKey` | `boolean` | No | Set to `true` to remove the current transition target. It takes precedence over a replacement value. |
     | `metadata` | `Record<string, unknown>` | No | Replaces metadata blob. |
 
     #### Returns
@@ -223,6 +224,7 @@ Applies partial updates such as display name, description, transition target, or
     | `DisplayName` | `string` | No | Updated label. |
     | `Description` | `string` | No | New description. |
     | `OnExpireTransitionToBillingCycleKey` | `string` | No | Replacement transition target. |
+    | `ClearOnExpireTransitionToBillingCycleKey` | `bool` | No | Set to `true` to remove the current transition target. It takes precedence over a replacement value. Defaults to `false`. |
     | `Metadata` | `Dictionary<string, object?>` | No | Replaces metadata blob. |
 
     #### Returns
@@ -239,6 +241,8 @@ Applies partial updates such as display name, description, transition target, or
 #### Expected Results
 - Validates provided fields.
 - Loads plan, applies updates, persists entity.
+- Omission leaves the transition target unchanged. Use the explicit clear flag to remove it.
+- .NET resolves and validates a replacement billing cycle before saving it. TypeScript stores the supplied transition key without resolving the cycle.
 
 #### Potential Errors
 
@@ -679,7 +683,8 @@ Sets or updates a plan-level override for a feature.
     ```
 
 #### Expected Results
-- Ensures plan and feature exist.
+- Ensures the plan and feature exist.
+- Requires the feature to be associated with the plan's product.
 - Validates the value via `FeatureValueValidator`.
 - Inserts or updates the plan’s feature value entry.
 
@@ -688,7 +693,7 @@ Sets or updates a plan-level override for a feature.
 | Error | When |
 | --- | --- |
 | `NotFoundError` | Plan or feature missing. |
-| `ValidationError` | Value fails validation rules. |
+| `ValidationError` | Value fails validation rules, or the feature is not associated with the plan's product. |
 
 ### removeFeatureValue
 
@@ -883,6 +888,7 @@ Lists all feature overrides configured on a plan.
     | `displayName` | `string` | Yes | 1–255 characters. |
     | `description` | `string` | No | ≤1000 characters. |
     | `onExpireTransitionToBillingCycleKey` | `string` | No | Billing cycle key for auto transition. |
+    | `clearOnExpireTransitionToBillingCycleKey` | `boolean` | No | Set to `true` to clear the transition target. |
     | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
 
 === ".NET"
@@ -913,6 +919,7 @@ Lists all feature overrides configured on a plan.
     | `DisplayName` | `string?` | No | 1–255 characters. |
     | `Description` | `string?` | No | ≤1000 characters. |
     | `OnExpireTransitionToBillingCycleKey` | `string?` | No | Billing cycle key for auto transition. |
+    | `ClearOnExpireTransitionToBillingCycleKey` | `bool` | No | Set to `true` to clear the transition target. Defaults to `false`. |
     | `Metadata` | `Dictionary<string, object?>?` | No | JSON-safe metadata. |
 
 ### PlanDto

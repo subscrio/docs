@@ -271,6 +271,8 @@ Event names use the pattern `{resource}.{action}.{before\|after}`.
       phase: 'before' | 'after';
       occurredAt: string;
       data: Stripe.Event;
+      stripeCustomerId?: string;
+      stripeSubscriptionId?: string;
     }
     ```
 
@@ -284,8 +286,12 @@ Event names use the pattern `{resource}.{action}.{before\|after}`.
         public required string Phase { get; init; }
         public required string OccurredAt { get; init; }
         public required Event Data { get; init; }
+        public string? StripeCustomerId { get; init; }
+        public string? StripeSubscriptionId { get; init; }
     }
     ```
+
+The optional Stripe IDs are extracted from the original verified event before the payload snapshot is created. They let after-hook integrations associate the event with records written during processing without reparsing Stripe's polymorphic event object.
 
 ## Registration API
 

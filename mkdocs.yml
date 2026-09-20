@@ -150,6 +150,7 @@ nav:
   - Subscriptions: reference/subscriptions.md
   - Hooks: reference/hooks.md
   - How to Extend: reference/how-to-extend.md
+  - ABP Integration: reference/abp-integration.md
   - Configuration Sync: reference/config-sync.md
   - How to Integrate with Stripe: reference/how-to-integrate-with-stripe.md
   - Stripe Integration API: reference/stripe-integration.md

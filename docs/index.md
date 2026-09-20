@@ -21,6 +21,8 @@ Use these docs to install the library, define products and plans, assign custome
 
     [Follow the TypeScript and .NET getting-started guide](reference/getting-started.md)
 
+    ABP applications can keep using `IFeatureChecker` with the optional [`Subscrio.Abp` integration](reference/abp-integration.md).
+
 === ".NET"
 
     Install `Subscrio.Core` and connect it to PostgreSQL or SQL Server.
@@ -79,6 +81,7 @@ The Stripe integration accepts supported, verified events and maintains the matc
 - [Feature checker](reference/feature-checker.md)
 - [Hooks](reference/hooks.md)
 - [How to extend Subscrio](reference/how-to-extend.md)
+- [ABP integration](reference/abp-integration.md)
 - [Configuration sync](reference/config-sync.md)
 - [How to integrate with Stripe](reference/how-to-integrate-with-stripe.md)
 - [Relationships](reference/relationships.md)

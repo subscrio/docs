@@ -2,7 +2,7 @@
 
 > Open-source entitlement engine for .NET and TypeScript. Subscrio stores products, features, plans, billing cycles, customers, and subscriptions in your database, then resolves feature access from subscription override, then plan value, then feature default.
 
-These pages are the public API reference and implementation guides. Use the TypeScript package `subscrio` or the .NET package `Subscrio.Core`. Subscrio does not process payments, run feature-flag rollouts, replace RBAC, or activate device licenses.
+These pages are the public API reference and implementation guides. Use the TypeScript package `subscrio` or the .NET package `Subscrio.Core`. ABP applications can add `Subscrio.Abp` to resolve ABP feature checks through Subscrio. Subscrio does not process payments, run feature-flag rollouts, replace RBAC, or activate device licenses.
 
 ## Docs
 
@@ -14,6 +14,7 @@ These pages are the public API reference and implementation guides. Use the Type
 - [Feature checker](https://docs.subscrio.com/reference/feature-checker/): Runtime feature resolution at subscription and customer scope
 - [Configuration sync](https://docs.subscrio.com/reference/config-sync/): Sync the entitlement catalog from JSON or `ConfigSyncDto`
 - [How to extend](https://docs.subscrio.com/reference/how-to-extend/): Inline hooks, first-party packages, and custom extensions
+- [ABP integration](https://docs.subscrio.com/reference/abp-integration/): Connect ABP tenant or user feature checks to Subscrio entitlements
 - [How to integrate with Stripe](https://docs.subscrio.com/reference/how-to-integrate-with-stripe/): Map Stripe IDs and forward verified webhook events
 
 ## API reference

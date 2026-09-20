@@ -6,6 +6,7 @@ Source of truth for documentation verification. Extracted from the local `../cor
 
 - `../core/typescript/src/**/*.ts`
 - `../core/dotnet/src/**/*.cs`
+- `../integrations/abp/src/Subscrio.Abp/**/*.cs`
 
 ---
 
@@ -26,6 +27,7 @@ Source of truth for documentation verification. Extracted from the local `../cor
 | `feature-checker.md` | FeatureCheckerService | 9 | ✓ Verified against source 2026-09-14 |
 | `hooks.md` | HookDispatcher | 28 events | ✓ Verified against source 2026-09-14 |
 | `how-to-extend.md` | payments + audit-log | — | ✓ Verified against source 2026-09-14 |
+| `abp-integration.md` | Subscrio.Abp | — | ✓ Verified against source 2026-09-20 |
 | `config-sync.md` | ConfigSyncService | 2 | ✓ Verified against source 2026-09-14 |
 | `how-to-integrate-with-stripe.md` | Guide | — | ✓ Verified against source 2026-09-14 |
 | `stripe-integration.md` | StripeIntegrationService and StripeConfig | 3 TS / 2 .NET service methods plus config helper | ✓ Verified against source 2026-09-14 |

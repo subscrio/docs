@@ -1,872 +1,1159 @@
 ---
-title: Billing cycles
-description: Define how a Subscrio plan renews, including duration, cadence, forever cycles, and Stripe price IDs on billing cycles.
+title: Billing Cycles
+description: Manage plan billing cadence, external price mappings, and period calculations.
+reference_format: true
 ---
 
-# Billing Cycle Management Service Reference
+# Billing Cycles
 
-## Service Overview
-Billing cycles define how plans renew (duration, cadence, and external price IDs). Each cycle belongs to a plan, exposes derived `planKey`/`productKey` in DTOs, and enforces delete guards whenever subscriptions or plan transitions reference it.
+## Purpose
 
-- Duration units: `days`, `weeks`, `months`, `years`, or `forever` (when `forever`, `durationValue` must be omitted).
-- Cycles can expose `externalProductId` (e.g., Stripe price) for payment processor mappings.
-- Delete operations require the cycle to be archived and unused by subscriptions or plan transition settings.
+<span id="method-reference" class="compatibility-anchor"></span>
 
-TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
+<span id="overview" class="compatibility-anchor"></span>
 
-## Accessing the Service
+A billing cycle belongs to one plan and defines its duration, such as one month or forever. Subscriptions select a billing cycle; an optional external product ID maps it to a payment-provider price.
 
-=== "TypeScript"
-    ```typescript
-    import { Subscrio } from 'subscrio';
+## Access and initialization
 
-    const subscrio = new Subscrio({ database: { connectionString: process.env.DATABASE_URL! } });
-    const billingCycles = subscrio.billingCycles;
-    ```
+### Access
 
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
+<div class="language-content" data-lang="ts" markdown="1">
 
-    var subscrio = new Subscrio(config);
-    var billingCycles = subscrio.BillingCycles;
-    ```
+```typescript
+const billingCycles = subscrio.billingCycles;
+```
 
-## Method Catalog
+</div>
 
-=== "TypeScript"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `createBillingCycle` | Creates a cycle for an existing plan | `Promise<BillingCycleDto>` |
-    | `updateBillingCycle` | Updates mutable fields on a cycle | `Promise<BillingCycleDto>` |
-    | `getBillingCycle` | Retrieves a cycle by key | `Promise<BillingCycleDto \| null>` |
-    | `getBillingCyclesByPlan` | Lists cycles for a plan | `Promise<BillingCycleDto[]>` |
-    | `listBillingCycles` | Lists cycles with filters/pagination | `Promise<BillingCycleDto[]>` |
-    | `archiveBillingCycle` | Archives a cycle | `Promise<void>` |
-    | `unarchiveBillingCycle` | Reactivates an archived cycle | `Promise<void>` |
-    | `deleteBillingCycle` | Deletes an archived, unused cycle | `Promise<void>` |
-    | `calculateNextPeriodEnd` | Computes next renewal end date | `Promise<Date \| null>` |
-    | `getBillingCyclesByDurationUnit` | Filters cycles by duration unit | `Promise<BillingCycleDto[]>` |
-    | `getDefaultBillingCycles` | Loads pre-installed defaults (monthly/quarterly/yearly) | `Promise<BillingCycleDto[]>` |
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `CreateBillingCycleAsync` | Creates a cycle for an existing plan | `Task<BillingCycleDto>` |
-    | `UpdateBillingCycleAsync` | Updates mutable fields on a cycle | `Task<BillingCycleDto>` |
-    | `GetBillingCycleAsync` | Retrieves a cycle by key | `Task<BillingCycleDto?>` |
-    | `GetBillingCyclesByPlanAsync` | Lists cycles for a plan | `Task<List<BillingCycleDto>>` |
-    | `ListBillingCyclesAsync` | Lists cycles with filters/pagination | `Task<List<BillingCycleDto>>` |
-    | `ArchiveBillingCycleAsync` | Archives a cycle | `Task` |
-    | `UnarchiveBillingCycleAsync` | Reactivates an archived cycle | `Task` |
-    | `DeleteBillingCycleAsync` | Deletes an archived, unused cycle | `Task` |
-    | `CalculateNextPeriodEndAsync` | Computes next renewal end date | `Task<DateTime?>` |
-    | `GetBillingCyclesByDurationUnitAsync` | Filters cycles by duration unit | `Task<List<BillingCycleDto>>` |
-    | `GetDefaultBillingCyclesAsync` | Loads pre-installed defaults (monthly/quarterly/yearly) | `Task<List<BillingCycleDto>>` |
+```csharp
+using Subscrio.Core.Application.DTOs;
 
-## Method Reference
+var billingCycles = subscrio.BillingCycles;
+```
 
-### createBillingCycle
+</div>
 
-#### Description
- Validates a new billing cycle payload, ensures the plan exists, and persists the cycle with `active` status.
+## Method catalog
 
-#### Signature
+Database and connection failures may propagate from any operation. Method-specific errors are listed with each method.
 
-=== "TypeScript"
-    ```typescript
-    createBillingCycle(dto: CreateBillingCycleDto): Promise<BillingCycleDto>
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== ".NET"
-    ```csharp
-    Task<BillingCycleDto> CreateBillingCycleAsync(CreateBillingCycleDto dto)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `dto` | `CreateBillingCycleDto` | Yes | Cycle definition for an existing plan. |
-
-#### Input Properties
-
-=== "TypeScript"
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `planKey` | `string` | Yes | Plan owning the cycle (lowercase alphanumeric + `-`). |
-    | `key` | `string` | Yes | Globally unique billing cycle key. |
-    | `displayName` | `string` | Yes | 1–255 char label. |
-    | `description` | `string` | No | ≤1000 chars. |
-    | `durationValue` | `number` | Conditional | Required unless `durationUnit` is `forever`; positive integer. |
-    | `durationUnit` | `'days' \| 'weeks' \| 'months' \| 'years' \| 'forever'` | Yes | Renewal cadence. |
-    | `externalProductId` | `string` | No | Stripe price or other external ID (≤255 chars). |
-
-=== ".NET"
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `PlanKey` | `string` | Yes | Plan owning the cycle. |
-    | `Key` | `string` | Yes | Globally unique billing cycle key. |
-    | `DisplayName` | `string` | Yes | 1–255 char label. |
-    | `Description` | `string` | No | ≤1000 chars. |
-    | `DurationValue` | `int?` | Conditional | Required unless `DurationUnit` is `forever`. |
-    | `DurationUnit` | `string` | Yes | `days`, `weeks`, `months`, `years`, or `forever`. |
-    | `ExternalProductId` | `string` | No | Stripe price or other external ID (≤255 chars). |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<BillingCycleDto>` – persisted cycle snapshot.
-
-=== ".NET"
-    `Task<BillingCycleDto>` – persisted cycle snapshot.
-
-#### Return Properties
-
-=== "TypeScript"
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `key` | `string` | Cycle key. |
-    | `planKey` | `string \| null` | Owning plan key when resolved. |
-    | `productKey` | `string \| null` | Derived from plan when resolved. |
-    | `displayName` | `string` | Display label. |
-    | `description` | `string \| null` | Optional description. |
-    | `status` | `string` | `active` or `archived`. |
-    | `durationValue` | `number \| null` | `null` when unit is `forever`. |
-    | `durationUnit` | `string` | Duration unit. |
-    | `externalProductId` | `string \| null` | Payment processor price ID. |
-    | `createdAt` | `string` | ISO timestamp. |
-    | `updatedAt` | `string` | ISO timestamp. |
-
-=== ".NET"
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `Key` | `string` | Cycle key. |
-    | `PlanKey` | `string?` | Owning plan key when resolved. |
-    | `ProductKey` | `string?` | Derived from plan when resolved. |
-    | `DisplayName` | `string` | Display label. |
-    | `Description` | `string?` | Optional description. |
-    | `Status` | `string` | `active` or `archived`. |
-    | `DurationValue` | `int?` | `null` when unit is `forever`. |
-    | `DurationUnit` | `string` | Duration unit. |
-    | `ExternalProductId` | `string?` | Payment processor price ID. |
-    | `CreatedAt` | `string` | ISO timestamp. |
-    | `UpdatedAt` | `string` | ISO timestamp. |
-
-#### Expected Results
-- Validates DTO (including duration rules).
-- Loads plan by `planKey` and fails if missing.
-- Rejects duplicate billing cycle keys.
-- Persists cycle with status `active`.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | DTO invalid or duration config inconsistent. |
-| `NotFoundError` | Plan missing. |
-| `ConflictError` | Billing cycle key already exists. |
+| [`createBillingCycle`](#createbillingcycle) | Creates an active billing cycle. |
+| [`updateBillingCycle`](#updatebillingcycle) | Updates cadence or display properties. |
+| [`getBillingCycle`](#getbillingcycle) | Gets a billing cycle or null. |
+| [`listBillingCycles`](#listbillingcycles) | Lists matching billing cycles. |
+| [`getBillingCyclesByPlan`](#getbillingcyclesbyplan) | Lists every cycle for a plan. |
+| [`archiveBillingCycle`](#archivebillingcycle) | Archives a billing cycle. |
+| [`unarchiveBillingCycle`](#unarchivebillingcycle) | Restores a billing cycle. |
+| [`deleteBillingCycle`](#deletebillingcycle) | Deletes an unused archived cycle. |
+| [`calculateNextPeriodEnd`](#calculatenextperiodend) | Calculates a period-end date. |
+| [`getBillingCyclesByDurationUnit`](#getbillingcyclesbydurationunit) | Finds cycles by duration unit. |
+| [`getDefaultBillingCycles`](#getdefaultbillingcycles) | Looks up the conventional cycle keys. |
 
-#### Example
+</div>
 
-=== "TypeScript"
-    ```typescript
-    await billingCycles.createBillingCycle({
-      planKey: 'annual-pro',
-      key: 'annual-pro-12m',
-      displayName: 'Annual (12 months)',
-      durationValue: 12,
-      durationUnit: 'months',
-      externalProductId: 'price_ABC123'
-    });
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    ```csharp
-    await subscrio.BillingCycles.CreateBillingCycleAsync(new CreateBillingCycleDto(
-        PlanKey: "annual-pro",
-        Key: "annual-pro-12m",
-        DisplayName: "Annual (12 months)",
-        DurationValue: 12,
-        DurationUnit: "months",
-        ExternalProductId: "price_ABC123"
-    ));
-    ```
-
-### updateBillingCycle
-
-#### Description
- Updates mutable fields (display name, description, duration config, pricing metadata) on an existing cycle.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    updateBillingCycle(key: string, dto: UpdateBillingCycleDto): Promise<BillingCycleDto>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<BillingCycleDto> UpdateBillingCycleAsync(string key, UpdateBillingCycleDto dto)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Cycle key to update. |
-| `dto` | `UpdateBillingCycleDto` | Yes | Partial update object. |
-
-#### Input Properties
-
-=== "TypeScript"
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `displayName` | `string` | No | 1–255 char label. |
-    | `description` | `string` | No | ≤1000 chars. |
-    | `durationValue` | `number` | No | Required unless `durationUnit` is `forever`. |
-    | `durationUnit` | `'days' \| 'weeks' \| 'months' \| 'years' \| 'forever'` | No | Renewal cadence. |
-    | `externalProductId` | `string` | No | Stripe price or other external ID. |
-
-    `planKey` and `key` are immutable and are not on this DTO.
-
-=== ".NET"
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `DisplayName` | `string?` | No | 1–255 char label. |
-    | `Description` | `string?` | No | ≤1000 chars. |
-    | `DurationValue` | `int?` | No | Required unless `DurationUnit` is `forever`. |
-    | `DurationUnit` | `string?` | No | `days`, `weeks`, `months`, `years`, or `forever`. |
-    | `ExternalProductId` | `string?` | No | Stripe price or other external ID. |
-
-    `PlanKey` and `Key` are immutable and are not on this DTO.
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<BillingCycleDto>` – updated cycle snapshot.
-
-=== ".NET"
-    `Task<BillingCycleDto>` – updated cycle snapshot.
-
-#### Return Properties
-
-=== "TypeScript"
-    - Same `BillingCycleDto` fields described in `createBillingCycle`.
-
-=== ".NET"
-    - Same `BillingCycleDto` fields described in `createBillingCycle`.
-
-#### Expected Results
-- Validates DTO.
-- Loads cycle, applies permissible fields, saves.
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    await billingCycles.updateBillingCycle('annual-pro-12m', {
-      displayName: 'Annual Plan (12 months)',
-      externalProductId: 'price_UPDATED'
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    await subscrio.BillingCycles.UpdateBillingCycleAsync("annual-pro-12m", new UpdateBillingCycleDto(
-        DisplayName: "Annual Plan (12 months)",
-        ExternalProductId: "price_UPDATED"
-    ));
-    ```
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | DTO invalid. |
-| `NotFoundError` | Cycle missing. |
+| [`CreateBillingCycleAsync`](#createbillingcycle) | Creates an active billing cycle. |
+| [`UpdateBillingCycleAsync`](#updatebillingcycle) | Updates cadence or display properties. |
+| [`GetBillingCycleAsync`](#getbillingcycle) | Gets a billing cycle or null. |
+| [`ListBillingCyclesAsync`](#listbillingcycles) | Lists matching billing cycles. |
+| [`GetBillingCyclesByPlanAsync`](#getbillingcyclesbyplan) | Lists every cycle for a plan. |
+| [`ArchiveBillingCycleAsync`](#archivebillingcycle) | Archives a billing cycle. |
+| [`UnarchiveBillingCycleAsync`](#unarchivebillingcycle) | Restores a billing cycle. |
+| [`DeleteBillingCycleAsync`](#deletebillingcycle) | Deletes an unused archived cycle. |
+| [`CalculateNextPeriodEndAsync`](#calculatenextperiodend) | Calculates a period-end date. |
+| [`GetBillingCyclesByDurationUnitAsync`](#getbillingcyclesbydurationunit) | Finds cycles by duration unit. |
+| [`GetDefaultBillingCyclesAsync`](#getdefaultbillingcycles) | Looks up the conventional cycle keys. |
 
-### getBillingCycle
+</div>
 
-#### Description
- Retrieves a single billing cycle by key (returns `null` if not found).
+## Method details
 
-#### Signature
+<div class="method-entry" markdown="1">
 
-=== "TypeScript"
-    ```typescript
-    getBillingCycle(key: string): Promise<BillingCycleDto | null>
-    ```
+### createBillingCycle { #createbillingcycle data-method-ts="createBillingCycle" data-method-net="CreateBillingCycleAsync" }
 
-=== ".NET"
-    ```csharp
-    Task<BillingCycleDto?> GetBillingCycleAsync(string key)
-    ```
+<span id="description" class="compatibility-anchor"></span>
+<span id="signature" class="compatibility-anchor"></span>
+<span id="inputs" class="compatibility-anchor"></span>
+<span id="input-properties" class="compatibility-anchor"></span>
+<span id="returns" class="compatibility-anchor"></span>
+<span id="return-properties" class="compatibility-anchor"></span>
+<span id="expected-results" class="compatibility-anchor"></span>
+<span id="potential-errors" class="compatibility-anchor"></span>
+<span id="example" class="compatibility-anchor"></span>
 
-#### Inputs
+Create an active billing cycle with a globally unique key. A finite duration requires a positive count; forever requires the count to be omitted.
 
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Cycle key. |
+<div class="language-content" data-lang="ts" markdown="1">
 
-#### Returns
+<div class="signature" markdown="1">
 
-=== "TypeScript"
-    `Promise<BillingCycleDto | null>`
+```typescript
+createBillingCycle(dto: CreateBillingCycleDto): Promise<BillingCycleDto>
+```
 
-=== ".NET"
-    `Task<BillingCycleDto?>`
+</div>
 
-#### Return Properties
+**Parameters**
 
-=== "TypeScript"
-    - `BillingCycleDto` shape (see `createBillingCycle`) or `null` when not found.
+- `dto`: [CreateBillingCycleDto](#CreateBillingCycleDto) with its plan, key, label, and duration.
 
-=== ".NET"
-    - `BillingCycleDto` shape (see `createBillingCycle`) or `null` when not found.
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a></code>: Saved cycle details, including plan and product keys.
 
-#### Expected Results
-- Loads cycle; if stored plan reference is missing (data corruption), throws `NotFoundError`.
+**Example**
 
-#### Potential Errors
+```typescript
+// pro exists.
+await subscrio.billingCycles.createBillingCycle({
+  planKey: 'pro', key: 'pro-monthly', displayName: 'Monthly',
+  durationUnit: 'months', durationValue: 1
+});
+```
 
-| Error | When |
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `ValidationError`: The properties or duration combination are invalid.
+- `NotFoundError`: The plan does not exist.
+- `ConflictError`: The billing cycle key already exists.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<BillingCycleDto> CreateBillingCycleAsync(CreateBillingCycleDto dto)
+```
+
+</div>
+
+**Parameters**
+
+- `dto`: [CreateBillingCycleDto](#CreateBillingCycleDto) with its plan, key, label, and duration.
+
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a></code>: Saved cycle details, including plan and product keys.
+
+**Example**
+
+```csharp
+// pro exists.
+await subscrio.BillingCycles.CreateBillingCycleAsync(new CreateBillingCycleDto(
+    PlanKey: "pro", Key: "pro-monthly", DisplayName: "Monthly",
+    DurationUnit: "months", DurationValue: 1));
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `ValidationException`: The properties or duration combination are invalid.
+- `NotFoundException`: The plan does not exist.
+- `ConflictException`: The billing cycle key already exists.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### updateBillingCycle { #updatebillingcycle data-method-ts="updateBillingCycle" data-method-net="UpdateBillingCycleAsync" }
+
+<span id="description_1" class="compatibility-anchor"></span>
+<span id="signature_1" class="compatibility-anchor"></span>
+<span id="inputs_1" class="compatibility-anchor"></span>
+<span id="input-properties_1" class="compatibility-anchor"></span>
+<span id="returns_1" class="compatibility-anchor"></span>
+<span id="return-properties_1" class="compatibility-anchor"></span>
+<span id="expected-results_1" class="compatibility-anchor"></span>
+<span id="example_1" class="compatibility-anchor"></span>
+<span id="potential-errors_1" class="compatibility-anchor"></span>
+
+Update the cycle without changing its key or plan. Changing its duration affects future period calculations; this method does not rewrite dates already stored on subscriptions. When changing the unit, supply a count for finite durations and omit it for forever. A previous count may remain stored for forever but is ignored by period calculation.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+updateBillingCycle(key: string, dto: UpdateBillingCycleDto): Promise<BillingCycleDto>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle to update.
+- `dto`: [UpdateBillingCycleDto](#UpdateBillingCycleDto). Uses [partial updates](getting-started.md#partial-updates).
+
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a></code>: Saved cycle details, including plan and product keys.
+
+**Example**
+
+```typescript
+await subscrio.billingCycles.updateBillingCycle('pro-monthly', {
+  durationUnit: 'months', durationValue: 3
+});
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `ValidationError`: The properties or duration combination are invalid.
+- `NotFoundError`: The cycle or its related plan is missing.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<BillingCycleDto> UpdateBillingCycleAsync(string key, UpdateBillingCycleDto dto)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle to update.
+- `dto`: [UpdateBillingCycleDto](#UpdateBillingCycleDto). Uses [partial updates](getting-started.md#partial-updates).
+
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a></code>: Saved cycle details, including plan and product keys.
+
+**Example**
+
+```csharp
+await subscrio.BillingCycles.UpdateBillingCycleAsync("pro-monthly",
+    new UpdateBillingCycleDto(DurationUnit: "months", DurationValue: 3));
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `ValidationException`: The properties or duration combination are invalid.
+- `NotFoundException`: The cycle or its related plan is missing.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### getBillingCycle { #getbillingcycle data-method-ts="getBillingCycle" data-method-net="GetBillingCycleAsync" }
+
+<span id="description_2" class="compatibility-anchor"></span>
+<span id="signature_2" class="compatibility-anchor"></span>
+<span id="inputs_2" class="compatibility-anchor"></span>
+<span id="returns_2" class="compatibility-anchor"></span>
+<span id="return-properties_2" class="compatibility-anchor"></span>
+<span id="expected-results_2" class="compatibility-anchor"></span>
+<span id="potential-errors_2" class="compatibility-anchor"></span>
+<span id="example_2" class="compatibility-anchor"></span>
+
+Retrieve a billing cycle, including archived cycles.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+getBillingCycle(key: string): Promise<BillingCycleDto | null>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle key.
+
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a> | null</code>: Cycle details, or null when missing.
+
+**Example**
+
+```typescript
+const cycle = await subscrio.billingCycles.getBillingCycle('pro-monthly');
+console.log(cycle?.durationUnit);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: A cycle exists but its related plan or product cannot be resolved.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<BillingCycleDto?> GetBillingCycleAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle key.
+
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a>?</code>: Cycle details, or null when missing.
+
+**Example**
+
+```csharp
+var cycle = await subscrio.BillingCycles.GetBillingCycleAsync("pro-monthly");
+Console.WriteLine(cycle?.DurationUnit);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: A cycle exists but its related plan or product cannot be resolved.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### listBillingCycles { #listbillingcycles data-method-ts="listBillingCycles" data-method-net="ListBillingCyclesAsync" }
+
+<span id="description_4" class="compatibility-anchor"></span>
+<span id="signature_4" class="compatibility-anchor"></span>
+<span id="inputs_4" class="compatibility-anchor"></span>
+<span id="input-properties_2" class="compatibility-anchor"></span>
+<span id="returns_4" class="compatibility-anchor"></span>
+<span id="return-properties_4" class="compatibility-anchor"></span>
+<span id="expected-results_4" class="compatibility-anchor"></span>
+<span id="potential-errors_4" class="compatibility-anchor"></span>
+<span id="example_4" class="compatibility-anchor"></span>
+
+List cycles with filtering, sorting, and pagination. Supplying a plan key instead returns all cycles for that plan; after validation, the other filters, sort options, and pagination are ignored. Without a plan key, results default to creation time ascending.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+listBillingCycles(filters?: BillingCycleFilterDto): Promise<BillingCycleDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: Optional [BillingCycleFilterDto](#BillingCycleFilterDto). Defaults to 50 results at offset zero when not filtering by plan.
+
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a>[]</code>: Matching cycles, or an empty collection.
+
+**Example**
+
+```typescript
+const cycles = await subscrio.billingCycles.listBillingCycles({
+  status: 'active', limit: 20, offset: 0
+});
+console.log(cycles);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `ValidationError`: A filter or pagination value is invalid.
+- `NotFoundError`: The specified plan does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<BillingCycleDto>> ListBillingCyclesAsync(BillingCycleFilterDto? filters)
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: Optional [BillingCycleFilterDto](#BillingCycleFilterDto). Defaults to 50 results at offset zero when not filtering by plan.
+
+**Returns** <code>List&lt;<a href="#BillingCycleDto">BillingCycleDto</a>&gt;</code>: Matching cycles, or an empty collection.
+
+**Example**
+
+```csharp
+var cycles = await subscrio.BillingCycles.ListBillingCyclesAsync(
+    new BillingCycleFilterDto(Status: "active", Limit: 20));
+Console.WriteLine(cycles.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `ValidationException`: A filter or pagination value is invalid.
+- `NotFoundException`: The specified plan does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### getBillingCyclesByPlan { #getbillingcyclesbyplan data-method-ts="getBillingCyclesByPlan" data-method-net="GetBillingCyclesByPlanAsync" }
+
+<span id="description_3" class="compatibility-anchor"></span>
+<span id="signature_3" class="compatibility-anchor"></span>
+<span id="inputs_3" class="compatibility-anchor"></span>
+<span id="returns_3" class="compatibility-anchor"></span>
+<span id="return-properties_3" class="compatibility-anchor"></span>
+<span id="expected-results_3" class="compatibility-anchor"></span>
+<span id="potential-errors_3" class="compatibility-anchor"></span>
+<span id="example_3" class="compatibility-anchor"></span>
+
+List all cycles for a plan, including archived cycles, in creation-time order. This lookup does not paginate.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+getBillingCyclesByPlan(planKey: string): Promise<BillingCycleDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `planKey`: Plan key.
+
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a>[]</code>: Plan cycles, or an empty collection.
+
+**Example**
+
+```typescript
+const cycles = await subscrio.billingCycles.getBillingCyclesByPlan('pro');
+console.log(cycles);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The plan does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<BillingCycleDto>> GetBillingCyclesByPlanAsync(string planKey)
+```
+
+</div>
+
+**Parameters**
+
+- `planKey`: Plan key.
+
+**Returns** <code>List&lt;<a href="#BillingCycleDto">BillingCycleDto</a>&gt;</code>: Plan cycles, or an empty collection.
+
+**Example**
+
+```csharp
+var cycles = await subscrio.BillingCycles.GetBillingCyclesByPlanAsync("pro");
+Console.WriteLine(cycles.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The plan does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### archiveBillingCycle { #archivebillingcycle data-method-ts="archiveBillingCycle" data-method-net="ArchiveBillingCycleAsync" }
+
+<span id="description_5" class="compatibility-anchor"></span>
+<span id="signature_5" class="compatibility-anchor"></span>
+<span id="inputs_5" class="compatibility-anchor"></span>
+<span id="returns_5" class="compatibility-anchor"></span>
+<span id="return-properties_5" class="compatibility-anchor"></span>
+<span id="expected-results_5" class="compatibility-anchor"></span>
+<span id="potential-errors_5" class="compatibility-anchor"></span>
+<span id="example_5" class="compatibility-anchor"></span>
+
+Mark the cycle as archived while retaining its definition and subscriptions. This does not cancel subscriptions.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+archiveBillingCycle(key: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+// pro-monthly exists.
+await subscrio.billingCycles.archiveBillingCycle('pro-monthly');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The billing cycle does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task ArchiveBillingCycleAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+// pro-monthly exists.
+await subscrio.BillingCycles.ArchiveBillingCycleAsync("pro-monthly");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The billing cycle does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### unarchiveBillingCycle { #unarchivebillingcycle data-method-ts="unarchiveBillingCycle" data-method-net="UnarchiveBillingCycleAsync" }
+
+<span id="description_6" class="compatibility-anchor"></span>
+<span id="signature_6" class="compatibility-anchor"></span>
+<span id="inputs_6" class="compatibility-anchor"></span>
+<span id="returns_6" class="compatibility-anchor"></span>
+<span id="return-properties_6" class="compatibility-anchor"></span>
+<span id="expected-results_6" class="compatibility-anchor"></span>
+<span id="potential-errors_6" class="compatibility-anchor"></span>
+<span id="example_6" class="compatibility-anchor"></span>
+
+Restore the cycle to active status while retaining its saved definition.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+unarchiveBillingCycle(key: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+// pro-monthly exists.
+await subscrio.billingCycles.unarchiveBillingCycle('pro-monthly');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The billing cycle does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task UnarchiveBillingCycleAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+// pro-monthly exists.
+await subscrio.BillingCycles.UnarchiveBillingCycleAsync("pro-monthly");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The billing cycle does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### deleteBillingCycle { #deletebillingcycle data-method-ts="deleteBillingCycle" data-method-net="DeleteBillingCycleAsync" }
+
+<span id="description_7" class="compatibility-anchor"></span>
+<span id="signature_7" class="compatibility-anchor"></span>
+<span id="inputs_7" class="compatibility-anchor"></span>
+<span id="returns_7" class="compatibility-anchor"></span>
+<span id="return-properties_7" class="compatibility-anchor"></span>
+<span id="expected-results_7" class="compatibility-anchor"></span>
+<span id="potential-errors_7" class="compatibility-anchor"></span>
+<span id="example_7" class="compatibility-anchor"></span>
+
+Permanently delete an archived cycle. Any referencing subscription, including cancelled or expired subscriptions, blocks deletion. Clear plan expiration-transition references first as well.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+deleteBillingCycle(key: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+// pro-monthly is archived and has no references.
+await subscrio.billingCycles.deleteBillingCycle('pro-monthly');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundError`: The billing cycle does not exist.
+- `DomainError`: The cycle is active or has references that block deletion.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task DeleteBillingCycleAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Billing cycle key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+// pro-monthly is archived and has no references.
+await subscrio.BillingCycles.DeleteBillingCycleAsync("pro-monthly");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundException`: The billing cycle does not exist.
+- `DomainException`: The cycle is active or has references that block deletion.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### calculateNextPeriodEnd { #calculatenextperiodend data-method-ts="calculateNextPeriodEnd" data-method-net="CalculateNextPeriodEndAsync" }
+
+<span id="description_8" class="compatibility-anchor"></span>
+<span id="signature_8" class="compatibility-anchor"></span>
+<span id="inputs_8" class="compatibility-anchor"></span>
+<span id="returns_8" class="compatibility-anchor"></span>
+<span id="return-properties_8" class="compatibility-anchor"></span>
+<span id="expected-results_8" class="compatibility-anchor"></span>
+<span id="potential-errors_8" class="compatibility-anchor"></span>
+<span id="example_8" class="compatibility-anchor"></span>
+
+Calculate a date without updating a subscription. Forever cycles return null. TypeScript uses JavaScript local-calendar date arithmetic, which can overflow into the following month; .NET uses DateTime arithmetic, which clamps a missing day to the end of the target month.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+calculateNextPeriodEnd(billingCycleKey: string, currentPeriodEnd: Date): Promise<Date | null>
+```
+
+</div>
+
+**Parameters**
+
+- `billingCycleKey`: Cycle defining the duration.
+- `currentPeriodEnd`: Date from which to add one cycle duration.
+
+**Returns** `Date | null`: Calculated date, or null for forever.
+
+**Example**
+
+```typescript
+const next = await subscrio.billingCycles.calculateNextPeriodEnd(
+  'pro-monthly', new Date('2026-01-15T00:00:00Z')
+);
+console.log(next);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The billing cycle does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<DateTime?> CalculateNextPeriodEndAsync(string billingCycleKey, DateTime currentPeriodEnd)
+```
+
+</div>
+
+**Parameters**
+
+- `billingCycleKey`: Cycle defining the duration.
+- `currentPeriodEnd`: Date from which to add one cycle duration.
+
+**Returns** `DateTime?`: Calculated date, or null for forever.
+
+**Example**
+
+```csharp
+var next = await subscrio.BillingCycles.CalculateNextPeriodEndAsync(
+    "pro-monthly", new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc));
+Console.WriteLine(next);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The billing cycle does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### getBillingCyclesByDurationUnit { #getbillingcyclesbydurationunit data-method-ts="getBillingCyclesByDurationUnit" data-method-net="GetBillingCyclesByDurationUnitAsync" }
+
+<span id="description_9" class="compatibility-anchor"></span>
+<span id="signature_9" class="compatibility-anchor"></span>
+<span id="inputs_9" class="compatibility-anchor"></span>
+<span id="returns_9" class="compatibility-anchor"></span>
+<span id="return-properties_9" class="compatibility-anchor"></span>
+<span id="expected-results_9" class="compatibility-anchor"></span>
+<span id="example_9" class="compatibility-anchor"></span>
+
+Find cycles by unit as a catalog helper. TypeScript checks all cycles and returns null plan/product keys in these snapshots. .NET filters its first 50 cycles before returning results and resolves their plan/product keys; use the normal list method for explicit pagination.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+getBillingCyclesByDurationUnit(durationUnit: DurationUnit): Promise<BillingCycleDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `durationUnit`: [DurationUnit](#DurationUnit) to match.
+
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a>[]</code>: Matching cycles, or an empty collection.
+
+**Example**
+
+```typescript
+import { DurationUnit } from 'subscrio';
+
+const cycles = await subscrio.billingCycles.getBillingCyclesByDurationUnit(DurationUnit.Months);
+console.log(cycles);
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<BillingCycleDto>> GetBillingCyclesByDurationUnitAsync(DurationUnit durationUnit)
+```
+
+</div>
+
+**Parameters**
+
+- `durationUnit`: [DurationUnit](#DurationUnit) to match.
+
+**Returns** <code>List&lt;<a href="#BillingCycleDto">BillingCycleDto</a>&gt;</code>: Matching cycles, or an empty collection.
+
+**Example**
+
+```csharp
+var cycles = await subscrio.BillingCycles.GetBillingCyclesByDurationUnitAsync(
+    Subscrio.Core.Domain.ValueObjects.DurationUnit.Months);
+Console.WriteLine(cycles.Count);
+```
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### getDefaultBillingCycles { #getdefaultbillingcycles data-method-ts="getDefaultBillingCycles" data-method-net="GetDefaultBillingCyclesAsync" }
+
+<span id="description_10" class="compatibility-anchor"></span>
+<span id="signature_10" class="compatibility-anchor"></span>
+<span id="returns_10" class="compatibility-anchor"></span>
+<span id="return-properties_10" class="compatibility-anchor"></span>
+<span id="expected-results_10" class="compatibility-anchor"></span>
+<span id="potential-errors_9" class="compatibility-anchor"></span>
+<span id="example_10" class="compatibility-anchor"></span>
+<span id="related-workflows" class="compatibility-anchor"></span>
+<span id="billing-periods-and-accounting" class="compatibility-anchor"></span>
+
+Look up existing cycles with the exact keys monthly, quarterly, and yearly, in that order. This helper does not create defaults or verify that their durations match their names. TypeScript returns null plan/product keys for these snapshots; .NET resolves those keys.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+getDefaultBillingCycles(): Promise<BillingCycleDto[]>
+```
+
+</div>
+
+**Returns** <code><a href="#BillingCycleDto">BillingCycleDto</a>[]</code>: Existing conventional-key cycles, or an empty collection.
+
+**Example**
+
+```typescript
+const cycles = await subscrio.billingCycles.getDefaultBillingCycles();
+console.log(cycles);
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<BillingCycleDto>> GetDefaultBillingCyclesAsync()
+```
+
+</div>
+
+**Returns** <code>List&lt;<a href="#BillingCycleDto">BillingCycleDto</a>&gt;</code>: Existing conventional-key cycles, or an empty collection.
+
+**Example**
+
+```csharp
+var cycles = await subscrio.BillingCycles.GetDefaultBillingCyclesAsync();
+Console.WriteLine(cycles.Count);
+```
+
+</div>
+
+</div>
+
+## Data types
+
+Required refers to supplied input fields or guaranteed returned properties. Conditional duration requirements apply in addition to nullable or optional types.
+
+<div class="data-type" markdown="1">
+
+### CreateBillingCycleDto { #CreateBillingCycleDto }
+
+Properties for a billing cycle. The plan and key cannot be changed later.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `planKey` | <code>string</code> | Yes | None | Owning plan key; null in TypeScript helper results that do not resolve relationships. |
+| `key` | <code>string</code> | Yes | None | Stable identifier. |
+| `displayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `durationUnit` | <code>&quot;days&quot; \| &quot;weeks&quot; \| &quot;months&quot; \| &quot;years&quot; \| &quot;forever&quot;</code> | Yes | None | days, weeks, months, years, or forever. |
+| `description` | <code>string \| undefined</code> | No | None | Optional description, up to 1,000 characters. |
+| `durationValue` | <code>number \| undefined</code> | No | None | Positive integer for finite durations. On creation, required unless the unit is forever; omit for forever. |
+| `externalProductId` | <code>string \| undefined</code> | No | None | Optional payment-provider price identifier, at most 255 characters. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `PlanKey` | <code>string</code> | Yes | None | Owning plan key; null in TypeScript helper results that do not resolve relationships. |
+| `Key` | <code>string</code> | Yes | None | Stable identifier. |
+| `DisplayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `DurationUnit` | <code>string</code> | Yes | None | days, weeks, months, years, or forever. |
+| `Description` | <code>string?</code> | No | null | Optional description, up to 1,000 characters. |
+| `DurationValue` | <code>int?</code> | No | null | Positive integer for finite durations. On creation, required unless the unit is forever; omit for forever. |
+| `ExternalProductId` | <code>string?</code> | No | null | Optional payment-provider price identifier, at most 255 characters. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### BillingCycleDto { #BillingCycleDto }
+
+Billing cycle details returned by catalog methods.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `productKey` | <code>string \| null</code> | Yes | Not applicable | Owning product key; null in TypeScript helper results that do not resolve relationships. |
+| `planKey` | <code>string \| null</code> | Yes | Not applicable | Owning plan key; null in TypeScript helper results that do not resolve relationships. |
+| `key` | <code>string</code> | Yes | Not applicable | Stable identifier. |
+| `displayName` | <code>string</code> | Yes | Not applicable | Human-readable label, 1 to 255 characters. |
+| `description` | <code>string \| null \| undefined</code> | No | Not applicable | Optional description, up to 1,000 characters. |
+| `status` | <code>string</code> | Yes | Not applicable | Current record status. |
+| `durationValue` | <code>number \| null \| undefined</code> | No | Not applicable | Stored duration count; ignored when the duration unit is forever. |
+| `durationUnit` | <code>string</code> | Yes | Not applicable | days, weeks, months, years, or forever. |
+| `externalProductId` | <code>string \| null \| undefined</code> | No | Not applicable | Optional payment-provider price identifier, at most 255 characters. |
+| `createdAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
+| `updatedAt` | <code>string</code> | Yes | Not applicable | Last update time in UTC. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `ProductKey` | <code>string?</code> | Yes | Not applicable | Owning product key; null in TypeScript helper results that do not resolve relationships. |
+| `PlanKey` | <code>string?</code> | Yes | Not applicable | Owning plan key; null in TypeScript helper results that do not resolve relationships. |
+| `Key` | <code>string</code> | Yes | Not applicable | Stable identifier. |
+| `DisplayName` | <code>string</code> | Yes | Not applicable | Human-readable label, 1 to 255 characters. |
+| `Description` | <code>string?</code> | Yes | Not applicable | Optional description, up to 1,000 characters. |
+| `Status` | <code>string</code> | Yes | Not applicable | Current record status. |
+| `DurationValue` | <code>int?</code> | Yes | Not applicable | Stored duration count; ignored when the duration unit is forever. |
+| `DurationUnit` | <code>string</code> | Yes | Not applicable | days, weeks, months, years, or forever. |
+| `ExternalProductId` | <code>string?</code> | Yes | Not applicable | Optional payment-provider price identifier, at most 255 characters. |
+| `CreatedAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
+| `UpdatedAt` | <code>string</code> | Yes | Not applicable | Last update time in UTC. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### UpdateBillingCycleDto { #UpdateBillingCycleDto }
+
+Editable properties. Uses [partial updates](getting-started.md#partial-updates).
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `displayName` | <code>string \| undefined</code> | No | None | Human-readable label, 1 to 255 characters. |
+| `description` | <code>string \| undefined</code> | No | None | Optional description, up to 1,000 characters. |
+| `durationValue` | <code>number \| undefined</code> | No | None | Positive integer. Required when supplying a finite duration unit; omit when supplying forever. Otherwise omission keeps the current count. |
+| `durationUnit` | <code>&quot;days&quot; \| &quot;weeks&quot; \| &quot;months&quot; \| &quot;years&quot; \| &quot;forever&quot; \| undefined</code> | No | None | days, weeks, months, years, or forever. |
+| `externalProductId` | <code>string \| undefined</code> | No | None | Optional payment-provider price identifier, at most 255 characters. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `DisplayName` | <code>string?</code> | No | null | Human-readable label, 1 to 255 characters. |
+| `Description` | <code>string?</code> | No | null | Optional description, up to 1,000 characters. |
+| `DurationValue` | <code>int?</code> | No | null | Positive integer. Required when supplying a finite duration unit; omit when supplying forever. Otherwise omission keeps the current count. |
+| `DurationUnit` | <code>string?</code> | No | null | days, weeks, months, years, or forever. |
+| `ExternalProductId` | <code>string?</code> | No | null | Optional payment-provider price identifier, at most 255 characters. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### BillingCycleFilterDto { #BillingCycleFilterDto }
+
+Catalog filters. TypeScript requires limit and offset when a filter object is supplied.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `limit` | <code>number</code> | Yes | 50 | Maximum page size, 1 to 100. |
+| `offset` | <code>number</code> | Yes | 0 | Nonnegative number of rows to skip. |
+| `durationUnit` | <code>&quot;days&quot; \| &quot;weeks&quot; \| &quot;months&quot; \| &quot;years&quot; \| &quot;forever&quot; \| undefined</code> | No | None | Restrict to days, weeks, months, years, or forever. |
+| `search` | <code>string \| undefined</code> | No | None | Match display name or description. |
+| `sortBy` | <code>&quot;displayName&quot; \| &quot;createdAt&quot; \| undefined</code> | No | None | displayName or createdAt; defaults to creation time. |
+| `sortOrder` | <code>&quot;asc&quot; \| &quot;desc&quot; \| undefined</code> | No | None | asc or desc; defaults to asc. |
+| `planKey` | <code>string \| undefined</code> | No | None | Selects all cycles for a plan and bypasses the remaining filters and pagination. |
+| `status` | <code>&quot;active&quot; \| &quot;archived&quot; \| undefined</code> | No | None | active or archived. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `PlanKey` | <code>string?</code> | No | null | Selects all cycles for a plan and bypasses the remaining filters and pagination. |
+| `Status` | <code>string?</code> | No | null | active or archived. |
+| `Limit` | <code>int</code> | No | 50 | Maximum page size, 1 to 100. |
+| `Offset` | <code>int</code> | No | 0 | Nonnegative number of rows to skip. |
+| `DurationUnit` | <code>string?</code> | No | null | Restrict to days, weeks, months, years, or forever. |
+| `Search` | <code>string?</code> | No | null | Match display name or description. |
+| `SortBy` | <code>string?</code> | No | null | displayName or createdAt; defaults to creation time. |
+| `SortOrder` | <code>string?</code> | No | null | asc or desc; defaults to asc. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### DurationUnit { #DurationUnit }
+
+Duration enum accepted by the unit lookup helper. DTOs use the corresponding lowercase strings.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Value | Meaning |
 | --- | --- |
-| `NotFoundError` | Cycle missing or plan reference cannot be resolved. |
+| `DurationUnit.Days` | Calendar days. |
+| `DurationUnit.Weeks` | Seven-day periods. |
+| `DurationUnit.Months` | Calendar months. |
+| `DurationUnit.Years` | Calendar years. |
+| `DurationUnit.Forever` | No finite period end. |
 
-#### Example
+</div>
 
-=== "TypeScript"
-    ```typescript
-    const cycle = await billingCycles.getBillingCycle('annual-pro-12m');
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    ```csharp
-    var cycle = await subscrio.BillingCycles.GetBillingCycleAsync("annual-pro-12m");
-    ```
-
-### getBillingCyclesByPlan
-
-#### Description
- Lists all billing cycles belonging to a plan.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    getBillingCyclesByPlan(planKey: string): Promise<BillingCycleDto[]>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<List<BillingCycleDto>> GetBillingCyclesByPlanAsync(string planKey)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `planKey` | `string` | Yes | Plan identifier. |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<BillingCycleDto[]>`
-
-=== ".NET"
-    `Task<List<BillingCycleDto>>`
-
-#### Return Properties
-
-=== "TypeScript"
-    - Array of `BillingCycleDto` entries scoped to the plan.
-
-=== ".NET"
-    - `List<BillingCycleDto>` scoped to the plan.
-
-#### Expected Results
-- Ensures plan exists.
-- Returns all cycles mapped to the plan (with derived product key).
-
-#### Potential Errors
-
-| Error | When |
+| Value | Meaning |
 | --- | --- |
-| `NotFoundError` | Plan missing. |
+| `DurationUnit.Days` | Calendar days. |
+| `DurationUnit.Weeks` | Seven-day periods. |
+| `DurationUnit.Months` | Calendar months. |
+| `DurationUnit.Years` | Calendar years. |
+| `DurationUnit.Forever` | No finite period end. |
 
-#### Example
+</div>
 
-=== "TypeScript"
-    ```typescript
-    const cycles = await billingCycles.getBillingCyclesByPlan('annual-pro');
-    ```
+</div>
 
-=== ".NET"
-    ```csharp
-    var cycles = await subscrio.BillingCycles.GetBillingCyclesByPlanAsync("annual-pro");
-    ```
+## Related guides
 
-### listBillingCycles
-
-#### Description
- Paginates billing cycles with optional filters.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    listBillingCycles(filters?: BillingCycleFilterDto): Promise<BillingCycleDto[]>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<List<BillingCycleDto>> ListBillingCyclesAsync(BillingCycleFilterDto? filters = null)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `filters` | `BillingCycleFilterDto` | No | Status, duration unit, plan key, search, pagination, sorting. |
-
-#### Input Properties
-
-=== "TypeScript"
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `planKey` | `string` | Limit to a plan. |
-    | `status` | `'active'` or `'archived'` | Filter by state. |
-    | `durationUnit` | `'days'`, `'weeks'`, `'months'`, `'years'`, `'forever'` | Filter by unit. |
-    | `search` | `string` | Text search across key/display name. |
-    | `limit` | `number` | 1–100 (default 50). |
-    | `offset` | `number` | ≥0 (default 0). |
-    | `sortBy` | `'displayName'` or `'createdAt'` | Sort column. |
-    | `sortOrder` | `'asc'` or `'desc'` | Query default `asc` when omitted. |
-
-=== ".NET"
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `PlanKey` | `string` | Limit to a plan. |
-    | `Status` | `string` | `active` or `archived`. |
-    | `DurationUnit` | `string` | Filter by unit. |
-    | `Search` | `string` | Text search across key/display name. |
-    | `Limit` | `int` | 1–100 (default 50). |
-    | `Offset` | `int` | ≥0 (default 0). |
-    | `SortBy` | `string?` | `displayName` or `createdAt`. |
-    | `SortOrder` | `string?` | `asc` or `desc`. Query default `asc` when omitted. |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<BillingCycleDto[]>`
-
-=== ".NET"
-    `Task<List<BillingCycleDto>>`
-
-#### Return Properties
-
-=== "TypeScript"
-    - Array of `BillingCycleDto` entries respecting the supplied filters.
-
-=== ".NET"
-    - `List<BillingCycleDto>` respecting the supplied filters.
-
-#### Expected Results
-- Validates filters.
-- When `planKey` is set, both languages load that plan's cycles and ignore the other filters (no pagination, status, search, or sort).
-- Otherwise executes the filtered query and returns DTO array.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `ValidationError` | Filters invalid. |
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    const paged = await billingCycles.listBillingCycles({
-      status: 'active',
-      durationUnit: 'months',
-      limit: 20
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    var paged = await subscrio.BillingCycles.ListBillingCyclesAsync(new BillingCycleFilterDto(
-        Status: "active",
-        DurationUnit: "months",
-        Limit: 20
-    ));
-    ```
-
-### archiveBillingCycle
-
-#### Description
- Marks a billing cycle as archived (cannot be used for new subscriptions).
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    archiveBillingCycle(key: string): Promise<void>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task ArchiveBillingCycleAsync(string key)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Cycle key. |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<void>`
-
-=== ".NET"
-    `Task`
-
-#### Return Properties
-
-=== "TypeScript"
-    - None.
-
-=== ".NET"
-    - None.
-
-#### Expected Results
-- Loads cycle, sets status `archived`, saves.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Cycle missing. |
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    await billingCycles.archiveBillingCycle('annual-pro-12m');
-    ```
-
-=== ".NET"
-    ```csharp
-    await subscrio.BillingCycles.ArchiveBillingCycleAsync("annual-pro-12m");
-    ```
-
-### unarchiveBillingCycle
-
-#### Description
- Restores an archived cycle to `active`.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    unarchiveBillingCycle(key: string): Promise<void>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task UnarchiveBillingCycleAsync(string key)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Cycle key. |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<void>`
-
-=== ".NET"
-    `Task`
-
-#### Return Properties
-
-=== "TypeScript"
-    - None.
-
-=== ".NET"
-    - None.
-
-#### Expected Results
-- Loads cycle, sets status `active`, saves.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Cycle missing. |
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    await billingCycles.unarchiveBillingCycle('annual-pro-12m');
-    ```
-
-=== ".NET"
-    ```csharp
-    await subscrio.BillingCycles.UnarchiveBillingCycleAsync("annual-pro-12m");
-    ```
-
-### deleteBillingCycle
-
-#### Description
- Permanently deletes a billing cycle after ensuring it is archived and unused by subscriptions or plan transitions.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    deleteBillingCycle(key: string): Promise<void>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task DeleteBillingCycleAsync(string key)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Cycle to delete. |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<void>`
-
-=== ".NET"
-    `Task`
-
-#### Return Properties
-
-=== "TypeScript"
-    - None.
-
-=== ".NET"
-    - None.
-
-#### Expected Results
-- Loads cycle, calls `billingCycle.canDelete()` (requires archived status).
-- Verifies no subscriptions reference the cycle.
-- Ensures no plan has `onExpireTransitionToBillingCycleKey` pointing to it.
-- Deletes record.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Cycle missing. |
-| `DomainError` | Cycle still active or referenced. |
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    await billingCycles.deleteBillingCycle('legacy-quarterly');
-    ```
-
-=== ".NET"
-    ```csharp
-    await subscrio.BillingCycles.DeleteBillingCycleAsync("legacy-quarterly");
-    ```
-
-### calculateNextPeriodEnd
-
-#### Description
- Computes the next period end for a billing cycle, given the current period end.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    calculateNextPeriodEnd(
-      billingCycleKey: string,
-      currentPeriodEnd: Date
-    ): Promise<Date | null>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<DateTime?> CalculateNextPeriodEndAsync(string billingCycleKey, DateTime currentPeriodEnd)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `billingCycleKey` | `string` | Yes | Cycle to use for calculation. |
-| `currentPeriodEnd` | `Date` | Yes | Current period end date. |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<Date | null>` – `null` for `forever` cycles.
-
-=== ".NET"
-    `Task<DateTime?>` – `null` for `forever` cycles.
-
-#### Return Properties
-
-=== "TypeScript"
-    - `Date`: calculated next period end.
-    - `null`: returned when the cycle duration unit is `forever`.
-
-=== ".NET"
-    - `DateTime`: calculated next period end.
-    - `null`: returned when the cycle duration unit is `forever`.
-
-#### Expected Results
-- Loads cycle, applies duration arithmetic (e.g., add N months) or returns `null` when unit is `forever`.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Cycle missing. |
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    const nextEnd = await billingCycles.calculateNextPeriodEnd(
-      'annual-pro-12m',
-      new Date('2025-01-01T00:00:00Z')
-    );
-    ```
-
-=== ".NET"
-    ```csharp
-    var nextEnd = await subscrio.BillingCycles.CalculateNextPeriodEndAsync(
-        "annual-pro-12m",
-        new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc)
-    );
-    ```
-
-### getBillingCyclesByDurationUnit
-
-#### Description
- Provides all cycles already stored with a specific duration unit.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    getBillingCyclesByDurationUnit(durationUnit: DurationUnit): Promise<BillingCycleDto[]>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<List<BillingCycleDto>> GetBillingCyclesByDurationUnitAsync(DurationUnit durationUnit)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `durationUnit` | `DurationUnit` | Yes | `'days'`, `'weeks'`, `'months'`, `'years'`, or `'forever'`. |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<BillingCycleDto[]>`
-
-=== ".NET"
-    `Task<List<BillingCycleDto>>`
-
-#### Return Properties
-
-=== "TypeScript"
-    - Array of `BillingCycleDto` entries limited to the requested duration unit.
-
-=== ".NET"
-    - `List<BillingCycleDto>` limited to the requested duration unit.
-
-#### Expected Results
-- Filters existing cycles by unit (no errors thrown).
-- TypeScript leaves `planKey` / `productKey` null. .NET resolves and fills those keys.
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    const monthlyCycles = await billingCycles.getBillingCyclesByDurationUnit('months');
-    ```
-
-=== ".NET"
-    ```csharp
-    var monthlyCycles = await subscrio.BillingCycles.GetBillingCyclesByDurationUnitAsync(DurationUnit.Months);
-    ```
-
-### getDefaultBillingCycles
-
-#### Description
- Retrieves pre-installed cycles (monthly/quarterly/yearly) when present.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    getDefaultBillingCycles(): Promise<BillingCycleDto[]>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<List<BillingCycleDto>> GetDefaultBillingCyclesAsync()
-    ```
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<BillingCycleDto[]>`
-
-=== ".NET"
-    `Task<List<BillingCycleDto>>`
-
-#### Return Properties
-
-=== "TypeScript"
-    - Array of default `BillingCycleDto` entries that were seeded (or empty).
-
-=== ".NET"
-    - `List<BillingCycleDto>` of defaults that were seeded (or empty).
-
-#### Expected Results
-- Looks up the hardcoded keys `monthly`, `quarterly`, and `yearly` and returns whichever exist.
-- TypeScript maps with `toDto(cycle)` and leaves `planKey` / `productKey` null. .NET resolves and fills those keys.
-
-#### Potential Errors
-- None (returns empty array when defaults not installed).
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    const defaults = await billingCycles.getDefaultBillingCycles();
-    ```
-
-=== ".NET"
-    ```csharp
-    var defaults = await subscrio.BillingCycles.GetDefaultBillingCyclesAsync();
-    ```
-
-## Related Workflows
-- Plans must exist before creating billing cycles (`PlanManagementService`).
-- Subscriptions reference billing cycles; deletion is blocked when subscriptions are present (`SubscriptionManagementService`).
-- Stripe integration uses `externalProductId` to map cycles to Stripe prices (`StripeIntegrationService`).
+- [Plans](plans.md): define offerings and expiration-transition targets.
+- [Subscriptions](subscriptions.md): select a billing cycle and manage stored period dates.
+- [Stripe Integration](stripe-integration.md): map external price IDs.
+- [Subscription Lifecycle](subscription-lifecycle.md): expiration and renewal.

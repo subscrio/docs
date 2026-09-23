@@ -1,1219 +1,1904 @@
 ---
 title: Subscriptions
-description: Create customer subscriptions, update lifecycle dates and metadata, and store feature overrides on top of plan values.
+description: Manage customer subscriptions, add-ons, overrides, and lifecycle transitions.
+reference_format: true
 ---
 
-# Subscriptions Service Reference
+# Subscriptions
 
-## Service Overview
-Subscriptions tie customers to plans and billing cycles, track lifecycle dates, and store feature overrides. This service manages creation, updates, status synchronization, feature overrides, and batch maintenance tasks.
+## Purpose
 
-- Subscription keys are caller-supplied and immutable.
-- Billing cycles derive plan/product context; updating a subscription’s billing cycle also changes its plan.
-- Status is computed on read. TypeScript uses `subscription_status_view`. .NET uses the same CASE order in `SubscriptionMapper.ComputeStatus`.
+<span id="dto-reference" class="compatibility-anchor"></span>
 
-TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
+<span id="method-reference" class="compatibility-anchor"></span>
 
-## Accessing the Service
+<span id="subscriptions-service-reference" class="compatibility-anchor"></span>
+<span id="overview" class="compatibility-anchor"></span>
 
-=== "TypeScript"
-    ```typescript
-    import { Subscrio } from 'subscrio';
+Subscriptions connect a customer to a plan through a billing cycle. Use this object to manage dates, attach add-ons, apply customer-specific feature overrides, and archive or transition subscriptions.
 
-    const subscrio = new Subscrio({ database: { connectionString: process.env.DATABASE_URL! } });
-    const subscriptions = subscrio.subscriptions;
-    ```
+## Access and initialization
 
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
+### Access
 
-    var subscrio = new Subscrio(config);
-    var subscriptions = subscrio.Subscriptions;
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-## Method Catalog
+```typescript
+const subscriptions = subscrio.subscriptions;
+```
 
-=== "TypeScript"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `createSubscription` | Creates a subscription for a customer and billing cycle | `Promise<SubscriptionDto>` |
-    | `updateSubscription` | Updates lifecycle fields, metadata, or billing cycle | `Promise<SubscriptionDto>` |
-    | `getSubscription` | Retrieves a subscription by key | `Promise<SubscriptionDto \| null>` |
-    | `listSubscriptions` | Lists subscriptions via simple filters | `Promise<SubscriptionDto[]>` |
-    | `findSubscriptions` | Advanced filtering (date ranges, overrides, metadata) | `Promise<SubscriptionDto[]>` |
-    | `getSubscriptionsByCustomer` | Lists subscriptions for a customer | `Promise<SubscriptionDto[]>` |
-    | `archiveSubscription` | Flags a subscription as archived | `Promise<void>` |
-    | `unarchiveSubscription` | Clears archived flag | `Promise<void>` |
-    | `deleteSubscription` | Deletes a subscription | `Promise<void>` |
-    | `addFeatureOverride` | Adds or updates a feature override | `Promise<void>` |
-    | `removeFeatureOverride` | Removes a feature override | `Promise<void>` |
-    | `clearTemporaryOverrides` | Removes temporary overrides | `Promise<void>` |
-    | `transitionExpiredSubscriptions` | Processes expired subscriptions and transitions them to configured plans | `Promise<TransitionExpiredSubscriptionsReport>` |
+</div>
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `CreateSubscriptionAsync` | Creates a subscription for a customer and billing cycle | `Task<SubscriptionDto>` |
-    | `UpdateSubscriptionAsync` | Updates lifecycle fields, metadata, or billing cycle | `Task<SubscriptionDto>` |
-    | `GetSubscriptionAsync` | Retrieves a subscription by key | `Task<SubscriptionDto?>` |
-    | `ListSubscriptionsAsync` | Lists subscriptions via simple filters | `Task<List<SubscriptionDto>>` |
-    | `FindSubscriptionsAsync` | Advanced filtering (date ranges, overrides, metadata) | `Task<List<SubscriptionDto>>` |
-    | `GetSubscriptionsByCustomerAsync` | Lists subscriptions for a customer | `Task<List<SubscriptionDto>>` |
-    | `ArchiveSubscriptionAsync` | Flags a subscription as archived | `Task` |
-    | `UnarchiveSubscriptionAsync` | Clears archived flag | `Task` |
-    | `DeleteSubscriptionAsync` | Deletes a subscription | `Task` |
-    | `AddFeatureOverrideAsync` | Adds or updates a feature override | `Task` |
-    | `RemoveFeatureOverrideAsync` | Removes a feature override | `Task` |
-    | `ClearTemporaryOverridesAsync` | Removes temporary overrides | `Task` |
-    | `TransitionExpiredSubscriptionsAsync` | Processes expired subscriptions and transitions them to configured plans | `Task<TransitionExpiredSubscriptionsReport>` |
+```csharp
+var subscriptions = subscrio.Subscriptions;
+```
 
-## Method Reference
+</div>
 
-### createSubscription
+## Method catalog
 
-#### Description
-Creates a subscription linking a customer to a plan/billing cycle and initializes lifecycle dates and metadata.
+Database and connection failures may propagate from any operation. Method-specific errors are listed with each method.
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    createSubscription(dto: CreateSubscriptionDto): Promise<SubscriptionDto>
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `dto` | `CreateSubscriptionDto` | Yes | Subscription definition including customer/billing cycle keys. |
-
-    #### Input Properties
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Subscription identifier (1–255 chars, alphanumeric with hyphens/underscores). |
-    | `customerKey` | `string` | Yes | Existing customer key. |
-    | `billingCycleKey` | `string` | Yes | Existing billing cycle key (derives plan/product). |
-    | `activationDate` | `string \| Date` | No | Defaults to current time. |
-    | `expirationDate` | `string \| Date` | No | Optional termination date. |
-    | `cancellationDate` | `string \| Date` | No | Optional cancellation timestamp. |
-    | `trialEndDate` | `string \| Date` | No | Controls `trial` status. |
-    | `currentPeriodStart` | `string \| Date` | No | Defaults to now. |
-    | `currentPeriodEnd` | `string \| Date` | No | Calculated from billing cycle if omitted. |
-    | `stripeSubscriptionId` | `string` | No | Optional Stripe linkage (must be unique). |
-    | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
-
-    #### Returns
-    `Promise<SubscriptionDto>` – persisted subscription snapshot with derived customer/product/plan keys.
-
-    #### Return Properties
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `key` | `string` | Subscription key. |
-    | `customerKey` | `string` | Customer key. |
-    | `productKey` | `string` | Product key (derived). |
-    | `planKey` | `string` | Plan key (derived). |
-    | `billingCycleKey` | `string` | Billing cycle key. |
-    | `status` | `string` | `active`, `trial`, `cancelled`, etc. |
-    | `isArchived` | `boolean` | Whether archived. |
-    | `activationDate` | `string \| null` | ISO timestamp. |
-    | `expirationDate` | `string \| null` | ISO timestamp. |
-    | `cancellationDate` | `string \| null` | ISO timestamp. |
-    | `trialEndDate` | `string \| null` | ISO timestamp. |
-    | `currentPeriodStart` | `string \| null` | ISO timestamp. |
-    | `currentPeriodEnd` | `string \| null` | ISO timestamp. |
-    | `stripeSubscriptionId` | `string \| null` | Stripe subscription ID. |
-    | `metadata` | `Record<string, unknown> \| null` | Metadata blob. |
-    | `customer` | `CustomerDto \| null` | `null` on create, get, and get-by-customer. Populated on list and find. |
-    | `createdAt` | `string` | ISO timestamp. |
-    | `updatedAt` | `string` | ISO timestamp. |
-
-    #### Example
-    ```typescript
-    await subscriptions.createSubscription({
-      key: 'sub_1001',
-      customerKey: 'cust_123',
-      billingCycleKey: 'annual-pro-12m',
-      activationDate: new Date().toISOString(),
-      metadata: { source: 'self-serve' }
-    });
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<SubscriptionDto> CreateSubscriptionAsync(CreateSubscriptionDto dto)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `dto` | `CreateSubscriptionDto` | Yes | Subscription definition including customer/billing cycle keys. |
-
-    #### Input Properties
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `Key` | `string` | Yes | Subscription identifier (1–255 chars, alphanumeric with hyphens/underscores). |
-    | `CustomerKey` | `string` | Yes | Existing customer key. |
-    | `BillingCycleKey` | `string` | Yes | Existing billing cycle key (derives plan/product). |
-    | `ActivationDate` | `DateTime?` | No | Defaults to current time. |
-    | `ExpirationDate` | `DateTime?` | No | Optional termination date. |
-    | `CancellationDate` | `DateTime?` | No | Optional cancellation timestamp. |
-    | `TrialEndDate` | `DateTime?` | No | Controls `trial` status. |
-    | `CurrentPeriodStart` | `DateTime?` | No | Defaults to now. |
-    | `CurrentPeriodEnd` | `DateTime?` | No | Calculated from billing cycle if omitted. |
-    | `StripeSubscriptionId` | `string?` | No | Optional Stripe linkage (must be unique). |
-    | `Metadata` | `Dictionary<string, object?>?` | No | JSON-safe metadata. |
-
-    #### Returns
-    `Task<SubscriptionDto>` – persisted subscription snapshot with derived customer/product/plan keys.
-
-    #### Return Properties
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `Key` | `string` | Subscription key. |
-    | `CustomerKey` | `string` | Customer key. |
-    | `ProductKey` | `string` | Product key (derived). |
-    | `PlanKey` | `string` | Plan key (derived). |
-    | `BillingCycleKey` | `string` | Billing cycle key. |
-    | `Status` | `string` | `active`, `trial`, `cancelled`, etc. |
-    | `IsArchived` | `bool` | Whether archived. |
-    | `ActivationDate` | `string?` | ISO timestamp. |
-    | `ExpirationDate` | `string?` | ISO timestamp. |
-    | `CancellationDate` | `string?` | ISO timestamp. |
-    | `TrialEndDate` | `string?` | ISO timestamp. |
-    | `CurrentPeriodStart` | `string?` | ISO timestamp. |
-    | `CurrentPeriodEnd` | `string?` | ISO timestamp. |
-    | `StripeSubscriptionId` | `string?` | Stripe subscription ID. |
-    | `Metadata` | `Dictionary<string, object?>?` | Metadata blob. |
-    | `Customer` | `CustomerDto?` | `null` on create, get, and get-by-customer. Populated on list and find. |
-    | `CreatedAt` | `string` | ISO timestamp. |
-    | `UpdatedAt` | `string` | ISO timestamp. |
-
-    #### Example
-    ```csharp
-    await subscrio.Subscriptions.CreateSubscriptionAsync(new CreateSubscriptionDto(
-        Key: "sub_1001",
-        CustomerKey: "cust_123",
-        BillingCycleKey: "annual-pro-12m",
-        ActivationDate: DateTime.UtcNow,
-        Metadata: new Dictionary<string, object?> { ["source"] = "self-serve" }
-    ));
-    ```
-
-#### Expected Results
-- Validates DTO and lifecycle dates.
-- Ensures customer and billing cycle exist (deriving plan/product).
-- Confirms subscription key and Stripe subscription ID are unique.
-- Backfills `currentPeriodEnd` when omitted.
-- Persists subscription; status is later read from the PostgreSQL view.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | DTO invalid or lifecycle math fails. |
-| `NotFoundError` | Customer, billing cycle, plan, or product missing. |
-| `ConflictError` | Duplicate subscription key or Stripe ID. |
+| [`createSubscription`](#createsubscription) | Creates a customer subscription. |
+| [`updateSubscription`](#updatesubscription) | Updates dates and billing cycle. |
+| [`getSubscription`](#getsubscription) | Gets a subscription or null. |
+| [`listSubscriptions`](#listsubscriptions) | Lists matching subscriptions. |
+| [`findSubscriptions`](#findsubscriptions) | Searches with additional date and presence filters. |
+| [`getSubscriptionsByCustomer`](#getsubscriptionsbycustomer) | Lists all subscriptions for a customer. |
+| [`attachAddon`](#attachaddon) | Attaches an add-on or replaces its quantity. |
+| [`detachAddon`](#detachaddon) | Cancels an add-on attachment. |
+| [`getAddons`](#getaddons) | Lists attachment details. |
+| [`addFeatureOverride`](#addfeatureoverride) | Sets a subscription-specific feature value. |
+| [`removeFeatureOverride`](#removefeatureoverride) | Removes a feature override. |
+| [`clearTemporaryOverrides`](#cleartemporaryoverrides) | Removes temporary overrides. |
+| [`archiveSubscription`](#archivesubscription) | Archives a subscription. |
+| [`unarchiveSubscription`](#unarchivesubscription) | Restores an archived subscription. |
+| [`deleteSubscription`](#deletesubscription) | Permanently deletes a subscription. |
+| [`transitionExpiredSubscriptions`](#transitionexpiredsubscriptions) | Processes configured expiration transitions. |
 
-### updateSubscription
+</div>
 
-#### Description
-Applies partial updates to lifecycle dates, billing cycle, Stripe linkage, or metadata.
+<div class="language-content" data-lang="net" markdown="1">
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    updateSubscription(subscriptionKey: string, dto: UpdateSubscriptionDto): Promise<SubscriptionDto>
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key to update. |
-    | `dto` | `UpdateSubscriptionDto` | Yes | Partial payload of mutable fields. |
-
-    #### Input Properties
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `billingCycleKey` | `string` | No | Moves subscription to a new plan/billing cycle. |
-    | `expirationDate` | `string \| Date` | No | Updates expiration. |
-    | `cancellationDate` | `string \| Date` | No | Updates cancellation timestamp. |
-    | `trialEndDate` | `string \| Date` | No | Replaces the trial end. `null` and an empty string are normalized to omission and do not clear the stored value. |
-    | `clearTrialEndDate` | `boolean` | No | Set to `true` to clear the stored trial end. This takes precedence over `trialEndDate`. |
-    | `currentPeriodStart` | `string \| Date` | No | Adjusts current period. |
-    | `currentPeriodEnd` | `string \| Date` | No | Overrides calculated end. |
-    | `stripeSubscriptionId` | `string` | No | Replaces Stripe linkage. The update DTO has no explicit clear operation. `null` is invalid and an empty string is treated as omission. |
-    | `metadata` | `Record<string, unknown>` | No | Replaces metadata blob. |
-
-    #### Returns
-    `Promise<SubscriptionDto>` – updated subscription snapshot.
-
-    #### Return Properties
-    Same as `createSubscription` (see SubscriptionDto).
-
-    #### Example
-    ```typescript
-    await subscriptions.updateSubscription('sub_1001', {
-      billingCycleKey: 'monthly-pro',
-      currentPeriodEnd: new Date().toISOString()
-    });
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<SubscriptionDto> UpdateSubscriptionAsync(string subscriptionKey, UpdateSubscriptionDto dto)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key to update. |
-    | `dto` | `UpdateSubscriptionDto` | Yes | Partial payload of mutable fields. |
-
-    #### Input Properties
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `BillingCycleKey` | `string?` | No | Moves subscription to a new plan/billing cycle. |
-    | `ExpirationDate` | `DateTime?` | No | Updates expiration. |
-    | `CancellationDate` | `DateTime?` | No | Updates cancellation timestamp. |
-    | `TrialEndDate` | `DateTime?` | No | Replaces the trial end. `null` means the field is omitted. |
-    | `ClearTrialEndDate` | `bool` | No | Set to `true` to clear the stored trial end. This takes precedence over `TrialEndDate`. Defaults to `false`. |
-    | `CurrentPeriodStart` | `DateTime?` | No | Adjusts current period. |
-    | `CurrentPeriodEnd` | `DateTime?` | No | Overrides calculated end. |
-    | `StripeSubscriptionId` | `string?` | No | Replaces Stripe linkage when non-null. The update DTO has no explicit clear operation. |
-    | `Metadata` | `Dictionary<string, object?>?` | No | Replaces metadata blob. |
-
-    #### Returns
-    `Task<SubscriptionDto>` – updated subscription snapshot.
-
-    #### Return Properties
-    Same as `CreateSubscriptionAsync` (see SubscriptionDto).
-
-    #### Example
-    ```csharp
-    await subscrio.Subscriptions.UpdateSubscriptionAsync("sub_1001", new UpdateSubscriptionDto(
-        BillingCycleKey: "monthly-pro",
-        CurrentPeriodEnd: DateTime.UtcNow
-    ));
-    ```
-
-#### Expected Results
-- Validates DTO and detects explicitly cleared fields.
-- Loads subscription; rejects if archived.
-- Applies lifecycle and billing cycle changes (updating plan ID when billing cycle changes).
-- Leaves `trialEndDate` and `TrialEndDate` unchanged when omitted. Use the explicit clear flag to remove the value.
-- Updates Stripe linkage only when a non-null ID is supplied. Neither update DTO currently clears it.
-- Persists entity; status continues to be resolved by the database view.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | DTO invalid. |
-| `NotFoundError` | Subscription or referenced billing cycle missing. |
-| `DomainError` | Subscription archived (must unarchive first). |
+| [`CreateSubscriptionAsync`](#createsubscription) | Creates a customer subscription. |
+| [`UpdateSubscriptionAsync`](#updatesubscription) | Updates dates and billing cycle. |
+| [`GetSubscriptionAsync`](#getsubscription) | Gets a subscription or null. |
+| [`ListSubscriptionsAsync`](#listsubscriptions) | Lists matching subscriptions. |
+| [`FindSubscriptionsAsync`](#findsubscriptions) | Searches with additional date and presence filters. |
+| [`GetSubscriptionsByCustomerAsync`](#getsubscriptionsbycustomer) | Lists all subscriptions for a customer. |
+| [`AttachAddonAsync`](#attachaddon) | Attaches an add-on or replaces its quantity. |
+| [`DetachAddonAsync`](#detachaddon) | Cancels an add-on attachment. |
+| [`GetAddonsAsync`](#getaddons) | Lists attachment details. |
+| [`AddFeatureOverrideAsync`](#addfeatureoverride) | Sets a subscription-specific feature value. |
+| [`RemoveFeatureOverrideAsync`](#removefeatureoverride) | Removes a feature override. |
+| [`ClearTemporaryOverridesAsync`](#cleartemporaryoverrides) | Removes temporary overrides. |
+| [`ArchiveSubscriptionAsync`](#archivesubscription) | Archives a subscription. |
+| [`UnarchiveSubscriptionAsync`](#unarchivesubscription) | Restores an archived subscription. |
+| [`DeleteSubscriptionAsync`](#deletesubscription) | Permanently deletes a subscription. |
+| [`TransitionExpiredSubscriptionsAsync`](#transitionexpiredsubscriptions) | Processes configured expiration transitions. |
 
-### getSubscription
+</div>
 
-#### Description
-Retrieves a subscription by key, returning `null` when it does not exist.
+## Method details
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    getSubscription(subscriptionKey: string): Promise<SubscriptionDto | null>
-    ```
+<div class="method-entry" markdown="1">
 
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key to fetch. |
+### createSubscription { #createsubscription data-method-ts="createSubscription" data-method-net="CreateSubscriptionAsync" }
 
-    #### Returns
-    `Promise<SubscriptionDto | null>` – subscription snapshot when found, `null` when missing.
+<span id="description" class="compatibility-anchor"></span>
+<span id="signature" class="compatibility-anchor"></span>
+<span id="inputs" class="compatibility-anchor"></span>
+<span id="input-properties" class="compatibility-anchor"></span>
+<span id="returns" class="compatibility-anchor"></span>
+<span id="return-properties" class="compatibility-anchor"></span>
+<span id="example" class="compatibility-anchor"></span>
+<span id="signature_1" class="compatibility-anchor"></span>
+<span id="inputs_1" class="compatibility-anchor"></span>
+<span id="input-properties_1" class="compatibility-anchor"></span>
+<span id="returns_1" class="compatibility-anchor"></span>
+<span id="return-properties_1" class="compatibility-anchor"></span>
+<span id="example_1" class="compatibility-anchor"></span>
+<span id="expected-results" class="compatibility-anchor"></span>
+<span id="potential-errors" class="compatibility-anchor"></span>
 
-    #### Return Properties
-    When found: `SubscriptionDto` (see createSubscription). When missing: `null`.
+Create a subscription using the selected billing cycle's plan and product. Activation and period start default to now; period end is calculated from the cycle unless supplied. A forever cycle has no period end. Mutations emit before and after [hooks](hooks.md).
 
-    #### Example
-    ```typescript
-    const subscription = await subscriptions.getSubscription('sub_1001');
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<SubscriptionDto?> GetSubscriptionAsync(string subscriptionKey)
-    ```
+<div class="signature" markdown="1">
 
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key to fetch. |
+```typescript
+createSubscription(dto: CreateSubscriptionDto): Promise<SubscriptionDto>
+```
 
-    #### Returns
-    `Task<SubscriptionDto?>` – subscription snapshot when found, `null` when missing.
+</div>
 
-    #### Return Properties
-    When found: `SubscriptionDto` (see CreateSubscriptionAsync). When missing: `null`.
+**Parameters**
 
-    #### Example
-    ```csharp
-    var subscription = await subscrio.Subscriptions.GetSubscriptionAsync("sub_1001");
-    ```
+- `dto`: [CreateSubscriptionDto](#CreateSubscriptionDto) identifying the customer and billing cycle.
 
-#### Expected Results
-- Loads subscription via repository and maps to DTO.
+**Returns** <code><a href="#SubscriptionDto">SubscriptionDto</a></code>: Saved subscription, overrides, and add-on attachments.
 
-#### Potential Errors
+**Example**
 
-| Error | When |
+```typescript
+// acme and pro-monthly exist.
+await subscrio.subscriptions.createSubscription({
+  key: 'acme-pro', customerKey: 'acme', billingCycleKey: 'pro-monthly'
+});
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `ValidationError`: The input properties are invalid.
+- `NotFoundError`: The customer, cycle, plan, or product is missing.
+- `ConflictError`: The subscription key or Stripe subscription ID already exists.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<SubscriptionDto> CreateSubscriptionAsync(CreateSubscriptionDto dto)
+```
+
+</div>
+
+**Parameters**
+
+- `dto`: [CreateSubscriptionDto](#CreateSubscriptionDto) identifying the customer and billing cycle.
+
+**Returns** <code><a href="#SubscriptionDto">SubscriptionDto</a></code>: Saved subscription, overrides, and add-on attachments.
+
+**Example**
+
+```csharp
+// acme and pro-monthly exist.
+await subscrio.Subscriptions.CreateSubscriptionAsync(new CreateSubscriptionDto(
+    Key: "acme-pro", CustomerKey: "acme", BillingCycleKey: "pro-monthly"));
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `ValidationException`: The input properties are invalid.
+- `NotFoundException`: The customer, cycle, plan, or product is missing.
+- `ConflictException`: The subscription key or Stripe subscription ID already exists.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### updateSubscription { #updatesubscription data-method-ts="updateSubscription" data-method-net="UpdateSubscriptionAsync" }
+
+<span id="description_1" class="compatibility-anchor"></span>
+<span id="signature_2" class="compatibility-anchor"></span>
+<span id="inputs_2" class="compatibility-anchor"></span>
+<span id="input-properties_2" class="compatibility-anchor"></span>
+<span id="returns_2" class="compatibility-anchor"></span>
+<span id="return-properties_2" class="compatibility-anchor"></span>
+<span id="example_2" class="compatibility-anchor"></span>
+<span id="signature_3" class="compatibility-anchor"></span>
+<span id="inputs_3" class="compatibility-anchor"></span>
+<span id="input-properties_3" class="compatibility-anchor"></span>
+<span id="returns_3" class="compatibility-anchor"></span>
+<span id="return-properties_3" class="compatibility-anchor"></span>
+<span id="example_3" class="compatibility-anchor"></span>
+<span id="expected-results_1" class="compatibility-anchor"></span>
+<span id="potential-errors_1" class="compatibility-anchor"></span>
+
+Update a subscription that is not archived. The key, customer, and activation date cannot change. Selecting another billing cycle also changes the plan but does not recalculate the stored period dates. Supplied metadata replaces the entire object.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+updateSubscription(subscriptionKey: string, dto: UpdateSubscriptionDto): Promise<SubscriptionDto>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `dto`: [UpdateSubscriptionDto](#UpdateSubscriptionDto). Uses [partial updates](getting-started.md#partial-updates). Date nulls and empty date strings are treated as omission at runtime; use the trial-clear flag to remove a trial end.
+
+**Returns** <code><a href="#SubscriptionDto">SubscriptionDto</a></code>: Updated subscription details.
+
+**Example**
+
+```typescript
+await subscrio.subscriptions.updateSubscription('acme-pro', {
+  clearTrialEndDate: true
+});
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `ValidationError`: The updated properties are invalid.
+- `NotFoundError`: The subscription or selected billing cycle is missing.
+- `DomainError`: The subscription is archived.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<SubscriptionDto> UpdateSubscriptionAsync(string subscriptionKey, UpdateSubscriptionDto dto)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `dto`: [UpdateSubscriptionDto](#UpdateSubscriptionDto). Uses [partial updates](getting-started.md#partial-updates); use the trial-clear flag to remove a trial end.
+
+**Returns** <code><a href="#SubscriptionDto">SubscriptionDto</a></code>: Updated subscription details.
+
+**Example**
+
+```csharp
+await subscrio.Subscriptions.UpdateSubscriptionAsync("acme-pro",
+    new UpdateSubscriptionDto(ClearTrialEndDate: true));
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `ValidationException`: The updated properties are invalid.
+- `NotFoundException`: The subscription or selected billing cycle is missing.
+- `DomainException`: The subscription is archived.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### getSubscription { #getsubscription data-method-ts="getSubscription" data-method-net="GetSubscriptionAsync" }
+
+<span id="description_2" class="compatibility-anchor"></span>
+<span id="signature_4" class="compatibility-anchor"></span>
+<span id="inputs_4" class="compatibility-anchor"></span>
+<span id="returns_4" class="compatibility-anchor"></span>
+<span id="return-properties_4" class="compatibility-anchor"></span>
+<span id="example_4" class="compatibility-anchor"></span>
+<span id="signature_5" class="compatibility-anchor"></span>
+<span id="inputs_5" class="compatibility-anchor"></span>
+<span id="returns_5" class="compatibility-anchor"></span>
+<span id="return-properties_5" class="compatibility-anchor"></span>
+<span id="example_5" class="compatibility-anchor"></span>
+<span id="expected-results_2" class="compatibility-anchor"></span>
+<span id="potential-errors_2" class="compatibility-anchor"></span>
+
+Retrieve subscription details, including archived subscriptions.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+getSubscription(subscriptionKey: string): Promise<SubscriptionDto | null>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** <code><a href="#SubscriptionDto">SubscriptionDto</a> | null</code>: Subscription details, or null when missing.
+
+**Example**
+
+```typescript
+const subscription = await subscrio.subscriptions.getSubscription('acme-pro');
+console.log(subscription?.addons);
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<SubscriptionDto?> GetSubscriptionAsync(string subscriptionKey)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** <code><a href="#SubscriptionDto">SubscriptionDto</a>?</code>: Subscription details, or null when missing.
+
+**Example**
+
+```csharp
+var subscription = await subscrio.Subscriptions.GetSubscriptionAsync("acme-pro");
+Console.WriteLine(subscription?.Addons.Count);
+```
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### listSubscriptions { #listsubscriptions data-method-ts="listSubscriptions" data-method-net="ListSubscriptionsAsync" }
+
+<span id="description_3" class="compatibility-anchor"></span>
+<span id="signature_6" class="compatibility-anchor"></span>
+<span id="inputs_6" class="compatibility-anchor"></span>
+<span id="input-properties_4" class="compatibility-anchor"></span>
+<span id="returns_6" class="compatibility-anchor"></span>
+<span id="return-properties_6" class="compatibility-anchor"></span>
+<span id="example_6" class="compatibility-anchor"></span>
+<span id="signature_7" class="compatibility-anchor"></span>
+<span id="inputs_7" class="compatibility-anchor"></span>
+<span id="input-properties_5" class="compatibility-anchor"></span>
+<span id="returns_7" class="compatibility-anchor"></span>
+<span id="return-properties_7" class="compatibility-anchor"></span>
+<span id="example_7" class="compatibility-anchor"></span>
+<span id="expected-results_3" class="compatibility-anchor"></span>
+<span id="potential-errors_3" class="compatibility-anchor"></span>
+
+List subscriptions with pagination, including archived records unless filtered out. Missing customer, plan, or product filter keys return an empty collection.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+listSubscriptions(filters?: SubscriptionFilterDto): Promise<SubscriptionDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: [SubscriptionFilterDto](#SubscriptionFilterDto). Optional; defaults to 50 results at offset zero.
+
+**Returns** <code><a href="#SubscriptionDto">SubscriptionDto</a>[]</code>: Matching subscriptions with customer details, overrides, and attachments.
+
+**Example**
+
+```typescript
+const matches = await subscrio.subscriptions.listSubscriptions({
+  customerKey: 'acme', isArchived: false, limit: 20, offset: 0
+});
+console.log(matches);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationError`: The filter values are invalid.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<SubscriptionDto>> ListSubscriptionsAsync(SubscriptionFilterDto? filters)
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: [SubscriptionFilterDto](#SubscriptionFilterDto). Optional; defaults to 50 results at offset zero.
+
+**Returns** <code>List&lt;<a href="#SubscriptionDto">SubscriptionDto</a>&gt;</code>: Matching subscriptions with customer details, overrides, and attachments.
+
+**Example**
+
+```csharp
+var matches = await subscrio.Subscriptions.ListSubscriptionsAsync(
+    new SubscriptionFilterDto(CustomerKey: "acme", IsArchived: false, Limit: 20));
+Console.WriteLine(matches.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: The filter values are invalid.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### findSubscriptions { #findsubscriptions data-method-ts="findSubscriptions" data-method-net="FindSubscriptionsAsync" }
+
+<span id="description_4" class="compatibility-anchor"></span>
+<span id="signature_8" class="compatibility-anchor"></span>
+<span id="inputs_8" class="compatibility-anchor"></span>
+<span id="input-properties_6" class="compatibility-anchor"></span>
+<span id="returns_8" class="compatibility-anchor"></span>
+<span id="return-properties_8" class="compatibility-anchor"></span>
+<span id="example_8" class="compatibility-anchor"></span>
+<span id="signature_9" class="compatibility-anchor"></span>
+<span id="inputs_9" class="compatibility-anchor"></span>
+<span id="input-properties_7" class="compatibility-anchor"></span>
+<span id="returns_9" class="compatibility-anchor"></span>
+<span id="return-properties_9" class="compatibility-anchor"></span>
+<span id="example_9" class="compatibility-anchor"></span>
+<span id="expected-results_4" class="compatibility-anchor"></span>
+<span id="potential-errors_4" class="compatibility-anchor"></span>
+
+Search subscriptions using additional date and presence filters. The override-presence check runs after pagination, so a page can contain fewer results than requested. Feature-key and metadata filters are currently ignored in both libraries.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+findSubscriptions(filters: DetailedSubscriptionFilterDto): Promise<SubscriptionDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: [DetailedSubscriptionFilterDto](#DetailedSubscriptionFilterDto).
+
+**Returns** <code><a href="#SubscriptionDto">SubscriptionDto</a>[]</code>: Matching subscriptions with customer details, overrides, and attachments.
+
+**Example**
+
+```typescript
+const matches = await subscrio.subscriptions.findSubscriptions({
+  customerKey: 'acme', isArchived: false, limit: 20, offset: 0
+});
+console.log(matches);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationError`: The filter values are invalid.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<SubscriptionDto>> FindSubscriptionsAsync(DetailedSubscriptionFilterDto filters)
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: [DetailedSubscriptionFilterDto](#DetailedSubscriptionFilterDto).
+
+**Returns** <code>List&lt;<a href="#SubscriptionDto">SubscriptionDto</a>&gt;</code>: Matching subscriptions with customer details, overrides, and attachments.
+
+**Example**
+
+```csharp
+var matches = await subscrio.Subscriptions.FindSubscriptionsAsync(
+    new DetailedSubscriptionFilterDto(CustomerKey: "acme", IsArchived: false, Limit: 20));
+Console.WriteLine(matches.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: The filter values are invalid.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### getSubscriptionsByCustomer { #getsubscriptionsbycustomer data-method-ts="getSubscriptionsByCustomer" data-method-net="GetSubscriptionsByCustomerAsync" }
+
+<span id="description_5" class="compatibility-anchor"></span>
+<span id="signature_10" class="compatibility-anchor"></span>
+<span id="inputs_10" class="compatibility-anchor"></span>
+<span id="returns_10" class="compatibility-anchor"></span>
+<span id="return-properties_10" class="compatibility-anchor"></span>
+<span id="example_10" class="compatibility-anchor"></span>
+<span id="signature_11" class="compatibility-anchor"></span>
+<span id="inputs_11" class="compatibility-anchor"></span>
+<span id="returns_11" class="compatibility-anchor"></span>
+<span id="return-properties_11" class="compatibility-anchor"></span>
+<span id="example_11" class="compatibility-anchor"></span>
+<span id="expected-results_5" class="compatibility-anchor"></span>
+<span id="potential-errors_5" class="compatibility-anchor"></span>
+
+Retrieve every subscription for the customer, including archived subscriptions. This lookup does not paginate.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+getSubscriptionsByCustomer(customerKey: string): Promise<SubscriptionDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `customerKey`: Customer key.
+
+**Returns** <code><a href="#SubscriptionDto">SubscriptionDto</a>[]</code>: Customer subscriptions, or an empty collection.
+
+**Example**
+
+```typescript
+const subscriptions = await subscrio.subscriptions.getSubscriptionsByCustomer('acme');
+console.log(subscriptions);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The customer does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<SubscriptionDto>> GetSubscriptionsByCustomerAsync(string customerKey)
+```
+
+</div>
+
+**Parameters**
+
+- `customerKey`: Customer key.
+
+**Returns** <code>List&lt;<a href="#SubscriptionDto">SubscriptionDto</a>&gt;</code>: Customer subscriptions, or an empty collection.
+
+**Example**
+
+```csharp
+var subscriptions = await subscrio.Subscriptions.GetSubscriptionsByCustomerAsync("acme");
+Console.WriteLine(subscriptions.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The customer does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### attachAddon { #attachaddon data-method-ts="attachAddon" data-method-net="AttachAddonAsync" }
+
+<span id="description_13" class="compatibility-anchor"></span>
+<span id="signature_26" class="compatibility-anchor"></span>
+<span id="inputs_26" class="compatibility-anchor"></span>
+<span id="returns_26" class="compatibility-anchor"></span>
+<span id="return-properties_14" class="compatibility-anchor"></span>
+<span id="example_26" class="compatibility-anchor"></span>
+<span id="signature_27" class="compatibility-anchor"></span>
+<span id="inputs_27" class="compatibility-anchor"></span>
+<span id="returns_27" class="compatibility-anchor"></span>
+<span id="return-properties_15" class="compatibility-anchor"></span>
+<span id="example_27" class="compatibility-anchor"></span>
+<span id="expected-results_13" class="compatibility-anchor"></span>
+<span id="potential-errors_13" class="compatibility-anchor"></span>
+
+Attach an active add-on from the subscription's product. Reattaching replaces the quantity and reactivates a cancelled attachment. The subscription must not be archived; replacement add-ons require quantity one.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+attachAddon(subscriptionKey: string, addonKey: string, quantity?: number): Promise<SubscriptionAddonDto>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `addonKey`: Add-on definition key.
+- `quantity`: Optional positive integer, at most 2,147,483,647; defaults to 1.
+
+**Returns** <code><a href="#SubscriptionAddonDto">SubscriptionAddonDto</a></code>: Saved attachment with the add-on definition.
+
+**Example**
+
+```typescript
+// extra-seats is an additive add-on for this subscription's product.
+await subscrio.subscriptions.attachAddon('acme-pro', 'extra-seats', 2);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundError`: The subscription, customer, or add-on is missing.
+- `ValidationError`: The quantity, product, add-on status, or subscription archive status is invalid.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<SubscriptionAddonDto> AttachAddonAsync(string subscriptionKey, string addonKey, int quantity)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `addonKey`: Add-on definition key.
+- `quantity`: Optional positive integer, at most 2,147,483,647; defaults to 1.
+
+**Returns** <code><a href="#SubscriptionAddonDto">SubscriptionAddonDto</a></code>: Saved attachment with the add-on definition.
+
+**Example**
+
+```csharp
+// extra-seats is an additive add-on for this subscription's product.
+await subscrio.Subscriptions.AttachAddonAsync("acme-pro", "extra-seats", 2);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundException`: The subscription, customer, or add-on is missing.
+- `ValidationException`: The quantity, product, add-on status, or subscription archive status is invalid.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### detachAddon { #detachaddon data-method-ts="detachAddon" data-method-net="DetachAddonAsync" }
+
+<span id="description_14" class="compatibility-anchor"></span>
+<span id="signature_28" class="compatibility-anchor"></span>
+<span id="inputs_28" class="compatibility-anchor"></span>
+<span id="returns_28" class="compatibility-anchor"></span>
+<span id="example_28" class="compatibility-anchor"></span>
+<span id="signature_29" class="compatibility-anchor"></span>
+<span id="inputs_29" class="compatibility-anchor"></span>
+<span id="returns_29" class="compatibility-anchor"></span>
+<span id="example_29" class="compatibility-anchor"></span>
+<span id="expected-results_14" class="compatibility-anchor"></span>
+<span id="potential-errors_14" class="compatibility-anchor"></span>
+
+Mark the attachment cancelled so it no longer contributes feature values. Its history remains available; calling again on an already-cancelled attachment succeeds.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+detachAddon(subscriptionKey: string, addonKey: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `addonKey`: Attached add-on key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+await subscrio.subscriptions.detachAddon('acme-pro', 'extra-seats');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The subscription or attachment does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task DetachAddonAsync(string subscriptionKey, string addonKey)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `addonKey`: Attached add-on key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Subscriptions.DetachAddonAsync("acme-pro", "extra-seats");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The subscription or attachment does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### getAddons { #getaddons data-method-ts="getAddons" data-method-net="GetAddonsAsync" }
+
+<span id="description_15" class="compatibility-anchor"></span>
+<span id="signature_30" class="compatibility-anchor"></span>
+<span id="inputs_30" class="compatibility-anchor"></span>
+<span id="input-properties_8" class="compatibility-anchor"></span>
+<span id="returns_30" class="compatibility-anchor"></span>
+<span id="return-properties_16" class="compatibility-anchor"></span>
+<span id="example_30" class="compatibility-anchor"></span>
+<span id="signature_31" class="compatibility-anchor"></span>
+<span id="inputs_31" class="compatibility-anchor"></span>
+<span id="returns_31" class="compatibility-anchor"></span>
+<span id="return-properties_17" class="compatibility-anchor"></span>
+<span id="example_31" class="compatibility-anchor"></span>
+<span id="expected-results_15" class="compatibility-anchor"></span>
+<span id="potential-errors_15" class="compatibility-anchor"></span>
+
+List active and cancelled attachments in add-on-key order. Each includes the current add-on definition.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+getAddons(subscriptionKey: string, filter?: PageFilter): Promise<SubscriptionAddonDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `filter`: Optional [PageFilter](addons.md#PageFilter); defaults to 50 results at offset zero.
+
+**Returns** <code><a href="#SubscriptionAddonDto">SubscriptionAddonDto</a>[]</code>: Attachments, or an empty collection when none exist or the subscription is missing.
+
+**Example**
+
+```typescript
+const addons = await subscrio.subscriptions.getAddons('acme-pro');
+console.log(addons);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationError`: Pagination is invalid.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<SubscriptionAddonDto>> GetAddonsAsync(string subscriptionKey, int limit, int offset)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `limit`: Optional page size, 1 to 500; defaults to 50.
+- `offset`: Optional nonnegative rows to skip; defaults to 0.
+
+**Returns** <code>List&lt;<a href="#SubscriptionAddonDto">SubscriptionAddonDto</a>&gt;</code>: Attachments, or an empty collection when none exist or the subscription is missing.
+
+**Example**
+
+```csharp
+var addons = await subscrio.Subscriptions.GetAddonsAsync("acme-pro");
+Console.WriteLine(addons.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: Pagination is invalid.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### addFeatureOverride { #addfeatureoverride data-method-ts="addFeatureOverride" data-method-net="AddFeatureOverrideAsync" }
+
+<span id="description_9" class="compatibility-anchor"></span>
+<span id="signature_18" class="compatibility-anchor"></span>
+<span id="inputs_18" class="compatibility-anchor"></span>
+<span id="returns_18" class="compatibility-anchor"></span>
+<span id="example_18" class="compatibility-anchor"></span>
+<span id="signature_19" class="compatibility-anchor"></span>
+<span id="inputs_19" class="compatibility-anchor"></span>
+<span id="returns_19" class="compatibility-anchor"></span>
+<span id="example_19" class="compatibility-anchor"></span>
+<span id="expected-results_9" class="compatibility-anchor"></span>
+<span id="potential-errors_9" class="compatibility-anchor"></span>
+
+Set a feature value specifically for this subscription, replacing any existing override for that feature. Timed overrides stop applying at their expiry but remain in returned history. The subscription must not be archived.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+addFeatureOverride(subscriptionKey: string, featureKey: string, value: string, overrideType?: OverrideType, expiresAt?: Date | string | null): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `featureKey`: Feature key.
+- `value`: String value valid for the feature's type.
+- `overrideType`: Optional [OverrideType](#OverrideType), default Permanent.
+- `expiresAt`: Required future UTC timestamp for Timed; omitted or null for other types.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+import { OverrideType } from 'subscrio';
+
+// max-seats is a numeric feature.
+await subscrio.subscriptions.addFeatureOverride(
+  'acme-pro', 'max-seats', '50', OverrideType.Permanent
+);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `NotFoundError`: The subscription or feature is missing.
+- `ValidationError`: The value, override type, or expiry is invalid.
+- `DomainError`: The subscription is archived.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task AddFeatureOverrideAsync(string subscriptionKey, string featureKey, string value, OverrideType overrideType, DateTime? expiresAt)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `featureKey`: Feature key.
+- `value`: String value valid for the feature's type.
+- `overrideType`: Optional [OverrideType](#OverrideType), default Permanent.
+- `expiresAt`: Required future UTC timestamp for Timed; omitted or null for other types.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+// max-seats is a numeric feature.
+await subscrio.Subscriptions.AddFeatureOverrideAsync(
+    "acme-pro", "max-seats", "50",
+    Subscrio.Core.Domain.ValueObjects.OverrideType.Permanent);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `NotFoundException`: The subscription or feature is missing.
+- `ValidationException`: The value, override type, or expiry is invalid.
+- `DomainException`: The subscription is archived.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### removeFeatureOverride { #removefeatureoverride data-method-ts="removeFeatureOverride" data-method-net="RemoveFeatureOverrideAsync" }
+
+<span id="description_10" class="compatibility-anchor"></span>
+<span id="signature_20" class="compatibility-anchor"></span>
+<span id="inputs_20" class="compatibility-anchor"></span>
+<span id="returns_20" class="compatibility-anchor"></span>
+<span id="example_20" class="compatibility-anchor"></span>
+<span id="signature_21" class="compatibility-anchor"></span>
+<span id="inputs_21" class="compatibility-anchor"></span>
+<span id="returns_21" class="compatibility-anchor"></span>
+<span id="example_21" class="compatibility-anchor"></span>
+<span id="expected-results_10" class="compatibility-anchor"></span>
+<span id="potential-errors_10" class="compatibility-anchor"></span>
+
+Remove the override for one feature. If no override is set, the operation succeeds without adding one. The subscription must not be archived.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+removeFeatureOverride(subscriptionKey: string, featureKey: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `featureKey`: Feature key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+await subscrio.subscriptions.removeFeatureOverride('acme-pro', 'max-seats');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundError`: The subscription or feature is missing.
+- `DomainError`: The subscription is archived.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task RemoveFeatureOverrideAsync(string subscriptionKey, string featureKey)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+- `featureKey`: Feature key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Subscriptions.RemoveFeatureOverrideAsync("acme-pro", "max-seats");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundException`: The subscription or feature is missing.
+- `DomainException`: The subscription is archived.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### clearTemporaryOverrides { #cleartemporaryoverrides data-method-ts="clearTemporaryOverrides" data-method-net="ClearTemporaryOverridesAsync" }
+
+<span id="description_11" class="compatibility-anchor"></span>
+<span id="signature_22" class="compatibility-anchor"></span>
+<span id="inputs_22" class="compatibility-anchor"></span>
+<span id="returns_22" class="compatibility-anchor"></span>
+<span id="example_22" class="compatibility-anchor"></span>
+<span id="signature_23" class="compatibility-anchor"></span>
+<span id="inputs_23" class="compatibility-anchor"></span>
+<span id="returns_23" class="compatibility-anchor"></span>
+<span id="example_23" class="compatibility-anchor"></span>
+<span id="expected-results_11" class="compatibility-anchor"></span>
+<span id="potential-errors_11" class="compatibility-anchor"></span>
+
+Remove only Temporary overrides. Permanent and Timed overrides remain. The subscription must not be archived.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+clearTemporaryOverrides(subscriptionKey: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+await subscrio.subscriptions.clearTemporaryOverrides('acme-pro');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundError`: The subscription is missing.
+- `DomainError`: The subscription is archived.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task ClearTemporaryOverridesAsync(string subscriptionKey)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Subscriptions.ClearTemporaryOverridesAsync("acme-pro");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundException`: The subscription is missing.
+- `DomainException`: The subscription is archived.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### archiveSubscription { #archivesubscription data-method-ts="archiveSubscription" data-method-net="ArchiveSubscriptionAsync" }
+
+<span id="description_6" class="compatibility-anchor"></span>
+<span id="signature_12" class="compatibility-anchor"></span>
+<span id="inputs_12" class="compatibility-anchor"></span>
+<span id="returns_12" class="compatibility-anchor"></span>
+<span id="example_12" class="compatibility-anchor"></span>
+<span id="signature_13" class="compatibility-anchor"></span>
+<span id="inputs_13" class="compatibility-anchor"></span>
+<span id="returns_13" class="compatibility-anchor"></span>
+<span id="example_13" class="compatibility-anchor"></span>
+<span id="expected-results_6" class="compatibility-anchor"></span>
+<span id="potential-errors_6" class="compatibility-anchor"></span>
+
+Archive the subscription without changing its dates or calculated status. It cannot be updated until restored. Customer feature checks exclude archived subscriptions when an explicit cross-subscription rule is configured; the default selection behavior does not.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+archiveSubscription(subscriptionKey: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+await subscrio.subscriptions.archiveSubscription('acme-pro');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The subscription is missing.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task ArchiveSubscriptionAsync(string subscriptionKey)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Subscriptions.ArchiveSubscriptionAsync("acme-pro");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The subscription is missing.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### unarchiveSubscription { #unarchivesubscription data-method-ts="unarchiveSubscription" data-method-net="UnarchiveSubscriptionAsync" }
+
+<span id="description_7" class="compatibility-anchor"></span>
+<span id="signature_14" class="compatibility-anchor"></span>
+<span id="inputs_14" class="compatibility-anchor"></span>
+<span id="returns_14" class="compatibility-anchor"></span>
+<span id="example_14" class="compatibility-anchor"></span>
+<span id="signature_15" class="compatibility-anchor"></span>
+<span id="inputs_15" class="compatibility-anchor"></span>
+<span id="returns_15" class="compatibility-anchor"></span>
+<span id="example_15" class="compatibility-anchor"></span>
+<span id="expected-results_7" class="compatibility-anchor"></span>
+<span id="potential-errors_7" class="compatibility-anchor"></span>
+
+Clear the archive flag. Existing dates still determine whether the subscription is active, expired, or cancelled.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+unarchiveSubscription(subscriptionKey: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+await subscrio.subscriptions.unarchiveSubscription('acme-pro');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The subscription is missing.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task UnarchiveSubscriptionAsync(string subscriptionKey)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Subscriptions.UnarchiveSubscriptionAsync("acme-pro");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The subscription is missing.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### deleteSubscription { #deletesubscription data-method-ts="deleteSubscription" data-method-net="DeleteSubscriptionAsync" }
+
+<span id="description_8" class="compatibility-anchor"></span>
+<span id="signature_16" class="compatibility-anchor"></span>
+<span id="inputs_16" class="compatibility-anchor"></span>
+<span id="returns_16" class="compatibility-anchor"></span>
+<span id="example_16" class="compatibility-anchor"></span>
+<span id="signature_17" class="compatibility-anchor"></span>
+<span id="inputs_17" class="compatibility-anchor"></span>
+<span id="returns_17" class="compatibility-anchor"></span>
+<span id="example_17" class="compatibility-anchor"></span>
+<span id="expected-results_8" class="compatibility-anchor"></span>
+<span id="potential-errors_8" class="compatibility-anchor"></span>
+
+Permanently delete the subscription and dependent overrides and add-on attachments, regardless of archive status. Retained accounting history can prevent deletion.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+deleteSubscription(subscriptionKey: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+await subscrio.subscriptions.deleteSubscription('acme-pro');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundError`: The subscription is missing.
+- `ConflictError`: Retained accounting or related history blocks deletion.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task DeleteSubscriptionAsync(string subscriptionKey)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKey`: Subscription key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Subscriptions.DeleteSubscriptionAsync("acme-pro");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundException`: The subscription is missing.
+- `ConflictException`: Retained accounting or related history blocks deletion.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### transitionExpiredSubscriptions { #transitionexpiredsubscriptions data-method-ts="transitionExpiredSubscriptions" data-method-net="TransitionExpiredSubscriptionsAsync" }
+
+<span id="description_12" class="compatibility-anchor"></span>
+<span id="signature_24" class="compatibility-anchor"></span>
+<span id="inputs_24" class="compatibility-anchor"></span>
+<span id="returns_24" class="compatibility-anchor"></span>
+<span id="return-properties_12" class="compatibility-anchor"></span>
+<span id="example_24" class="compatibility-anchor"></span>
+<span id="signature_25" class="compatibility-anchor"></span>
+<span id="inputs_25" class="compatibility-anchor"></span>
+<span id="returns_25" class="compatibility-anchor"></span>
+<span id="return-properties_13" class="compatibility-anchor"></span>
+<span id="example_25" class="compatibility-anchor"></span>
+<span id="expected-results_12" class="compatibility-anchor"></span>
+<span id="potential-errors_12" class="compatibility-anchor"></span>
+<span id="usage-notes" class="compatibility-anchor"></span>
+<span id="createsubscriptiondto" class="compatibility-anchor"></span>
+<span id="updatesubscriptiondto" class="compatibility-anchor"></span>
+<span id="subscriptiondto" class="compatibility-anchor"></span>
+<span id="featureoverridedto" class="compatibility-anchor"></span>
+<span id="subscriptionfilterdto" class="compatibility-anchor"></span>
+<span id="detailedsubscriptionfilterdto" class="compatibility-anchor"></span>
+<span id="related-workflows" class="compatibility-anchor"></span>
+<span id="add-ons-and-timed-overrides" class="compatibility-anchor"></span>
+<span id="subscription-add-on-methods" class="compatibility-anchor"></span>
+
+Process up to 1,000 unarchived expired subscriptions whose plans specify a transition billing cycle. Each replacement receives a versioned key and copied metadata, but no old overrides, add-ons, trial, or Stripe ID. The replacement is saved before the old subscription is archived. These writes are not one transaction; inspect the report for partial failures.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+transitionExpiredSubscriptions(): Promise<TransitionExpiredSubscriptionsReport>
+```
+
+</div>
+
+**Returns** <code><a href="#TransitionExpiredSubscriptionsReport">TransitionExpiredSubscriptionsReport</a></code>: Counts and per-subscription failures.
+
+**Example**
+
+```typescript
+const report = await subscrio.subscriptions.transitionExpiredSubscriptions();
+console.log(report.transitioned, report.errors);
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<TransitionExpiredSubscriptionsReport> TransitionExpiredSubscriptionsAsync()
+```
+
+</div>
+
+**Returns** <code><a href="#TransitionExpiredSubscriptionsReport">TransitionExpiredSubscriptionsReport</a></code>: Counts and per-subscription failures.
+
+**Example**
+
+```csharp
+var report = await subscrio.Subscriptions.TransitionExpiredSubscriptionsAsync();
+Console.WriteLine($"Transitioned: {report.Transitioned}, errors: {report.Errors.Count}");
+```
+
+</div>
+
+</div>
+
+## Data types
+
+Required means an input must be supplied, or an output property is guaranteed present.
+
+<div class="data-type" markdown="1">
+
+### CreateSubscriptionDto { #CreateSubscriptionDto }
+
+Subscription creation properties.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Globally unique key, 1 to 255 letters, digits, hyphens, or underscores. |
+| `customerKey` | <code>string</code> | Yes | None | Customer key. |
+| `billingCycleKey` | <code>string</code> | Yes | None | Lowercase billing-cycle key; determines the plan and product. |
+| `activationDate` | <code>string \| Date \| undefined</code> | No | None | Activation time; defaults to now when creating. Immutable afterward. |
+| `expirationDate` | <code>string \| Date \| undefined</code> | No | None | Explicit subscription expiration time, independent of period end. |
+| `cancellationDate` | <code>string \| Date \| undefined</code> | No | None | Cancellation time; a future date schedules cancellation. |
+| `trialEndDate` | <code>string \| Date \| undefined</code> | No | None | Trial end time. |
+| `currentPeriodStart` | <code>string \| Date \| undefined</code> | No | None | Billing period start; defaults to now on creation. |
+| `currentPeriodEnd` | <code>string \| Date \| undefined</code> | No | None | Billing period end; calculated from the cycle on creation when omitted. |
+| `stripeSubscriptionId` | <code>string \| undefined</code> | No | None | External Stripe subscription ID; unique when set. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Application metadata; supplied updates replace the saved object. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Globally unique key, 1 to 255 letters, digits, hyphens, or underscores. |
+| `CustomerKey` | <code>string</code> | Yes | None | Customer key. |
+| `BillingCycleKey` | <code>string</code> | Yes | None | Lowercase billing-cycle key; determines the plan and product. |
+| `ActivationDate` | <code>DateTime?</code> | No | null | Activation time; defaults to now when creating. Immutable afterward. |
+| `ExpirationDate` | <code>DateTime?</code> | No | null | Explicit subscription expiration time, independent of period end. |
+| `CancellationDate` | <code>DateTime?</code> | No | null | Cancellation time; a future date schedules cancellation. |
+| `TrialEndDate` | <code>DateTime?</code> | No | null | Trial end time. |
+| `CurrentPeriodStart` | <code>DateTime?</code> | No | null | Billing period start; defaults to now on creation. |
+| `CurrentPeriodEnd` | <code>DateTime?</code> | No | null | Billing period end; calculated from the cycle on creation when omitted. |
+| `StripeSubscriptionId` | <code>string?</code> | No | null | External Stripe subscription ID; unique when set. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Application metadata; supplied updates replace the saved object. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### SubscriptionDto { #SubscriptionDto }
+
+Returned subscription properties.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `addons` | <code><a href="#SubscriptionAddonDto">SubscriptionAddonDto</a>[]</code> | Yes | Not applicable | Active and cancelled [attachments](#SubscriptionAddonDto), including add-on definitions. |
+| `key` | <code>string</code> | Yes | Not applicable | Globally unique key, 1 to 255 letters, digits, hyphens, or underscores. |
+| `customerKey` | <code>string</code> | Yes | Not applicable | Customer key. |
+| `productKey` | <code>string</code> | Yes | Not applicable | Owning product key. |
+| `planKey` | <code>string</code> | Yes | Not applicable | Plan key. |
+| `billingCycleKey` | <code>string</code> | Yes | Not applicable | Lowercase billing-cycle key; determines the plan and product. |
+| `status` | <code>string</code> | Yes | Not applicable | Calculated lifecycle status; see [Subscription Lifecycle](subscription-lifecycle.md). |
+| `isArchived` | <code>boolean</code> | Yes | Not applicable | Archive flag, separate from calculated status. |
+| `activationDate` | <code>string \| null \| undefined</code> | No | Not applicable | Activation time; defaults to now when creating. Immutable afterward. |
+| `expirationDate` | <code>string \| null \| undefined</code> | No | Not applicable | Explicit subscription expiration time, independent of period end. |
+| `cancellationDate` | <code>string \| null \| undefined</code> | No | Not applicable | Cancellation time; a future date schedules cancellation. |
+| `trialEndDate` | <code>string \| null \| undefined</code> | No | Not applicable | Trial end time. |
+| `currentPeriodStart` | <code>string \| null \| undefined</code> | No | Not applicable | Billing period start; defaults to now on creation. |
+| `currentPeriodEnd` | <code>string \| null \| undefined</code> | No | Not applicable | Billing period end; calculated from the cycle on creation when omitted. |
+| `stripeSubscriptionId` | <code>string \| null \| undefined</code> | No | Not applicable | External Stripe subscription ID; unique when set. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| null \| undefined</code> | No | Not applicable | Application metadata; supplied updates replace the saved object. |
+| `customer` | <code><a href="../customers/#CustomerDto">CustomerDto</a> \| null \| undefined</code> | No | Not applicable | Customer details included by list/find methods; may be null in other results. |
+| `featureOverrides` | <code><a href="#FeatureOverrideDto">FeatureOverrideDto</a>[] \| undefined</code> | No | Not applicable | All saved overrides, including expired timed overrides. |
+| `createdAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
+| `updatedAt` | <code>string</code> | Yes | Not applicable | Last update time in UTC. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Addons` | <code>List&lt;<a href="#SubscriptionAddonDto">SubscriptionAddonDto</a>&gt;</code> | Yes | Not applicable | Active and cancelled [attachments](#SubscriptionAddonDto), including add-on definitions. |
+| `FeatureOverrides` | <code>List&lt;<a href="#FeatureOverrideDto">FeatureOverrideDto</a>&gt;</code> | Yes | Not applicable | All saved overrides, including expired timed overrides. |
+| `Key` | <code>string</code> | Yes | Not applicable | Globally unique key, 1 to 255 letters, digits, hyphens, or underscores. |
+| `CustomerKey` | <code>string</code> | Yes | Not applicable | Customer key. |
+| `ProductKey` | <code>string</code> | Yes | Not applicable | Owning product key. |
+| `PlanKey` | <code>string</code> | Yes | Not applicable | Plan key. |
+| `BillingCycleKey` | <code>string</code> | Yes | Not applicable | Lowercase billing-cycle key; determines the plan and product. |
+| `Status` | <code>string</code> | Yes | Not applicable | Calculated lifecycle status; see [Subscription Lifecycle](subscription-lifecycle.md). |
+| `IsArchived` | <code>bool</code> | Yes | Not applicable | Archive flag, separate from calculated status. |
+| `ActivationDate` | <code>string?</code> | Yes | Not applicable | Activation time; defaults to now when creating. Immutable afterward. |
+| `ExpirationDate` | <code>string?</code> | Yes | Not applicable | Explicit subscription expiration time, independent of period end. |
+| `CancellationDate` | <code>string?</code> | Yes | Not applicable | Cancellation time; a future date schedules cancellation. |
+| `TrialEndDate` | <code>string?</code> | Yes | Not applicable | Trial end time. |
+| `CurrentPeriodStart` | <code>string?</code> | Yes | Not applicable | Billing period start; defaults to now on creation. |
+| `CurrentPeriodEnd` | <code>string?</code> | Yes | Not applicable | Billing period end; calculated from the cycle on creation when omitted. |
+| `StripeSubscriptionId` | <code>string?</code> | Yes | Not applicable | External Stripe subscription ID; unique when set. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | Yes | Not applicable | Application metadata; supplied updates replace the saved object. |
+| `Customer` | <code><a href="../customers/#CustomerDto">CustomerDto</a>?</code> | Yes | Not applicable | Customer details included by list/find methods; may be null in other results. |
+| `CreatedAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
+| `UpdatedAt` | <code>string</code> | Yes | Not applicable | Last update time in UTC. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### UpdateSubscriptionDto { #UpdateSubscriptionDto }
+
+Subscription update properties.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `billingCycleKey` | <code>string \| undefined</code> | No | None | Lowercase billing-cycle key; determines the plan and product. |
+| `expirationDate` | <code>string \| Date \| undefined</code> | No | None | Explicit subscription expiration time, independent of period end. |
+| `cancellationDate` | <code>string \| Date \| undefined</code> | No | None | Cancellation time; a future date schedules cancellation. |
+| `trialEndDate` | <code>string \| Date \| undefined</code> | No | None | Trial end time. |
+| `clearTrialEndDate` | <code>boolean \| undefined</code> | No | false | Set true to clear the trial end, taking precedence over a supplied trial end. |
+| `currentPeriodStart` | <code>string \| Date \| undefined</code> | No | None | Billing period start; defaults to now on creation. |
+| `currentPeriodEnd` | <code>string \| Date \| undefined</code> | No | None | Billing period end; calculated from the cycle on creation when omitted. |
+| `stripeSubscriptionId` | <code>string \| undefined</code> | No | None | External Stripe subscription ID; unique when set. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Application metadata; supplied updates replace the saved object. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `BillingCycleKey` | <code>string?</code> | No | null | Lowercase billing-cycle key; determines the plan and product. |
+| `ExpirationDate` | <code>DateTime?</code> | No | null | Explicit subscription expiration time, independent of period end. |
+| `CancellationDate` | <code>DateTime?</code> | No | null | Cancellation time; a future date schedules cancellation. |
+| `TrialEndDate` | <code>DateTime?</code> | No | null | Trial end time. |
+| `ClearTrialEndDate` | <code>bool</code> | No | false | Set true to clear the trial end, taking precedence over a supplied trial end. |
+| `CurrentPeriodStart` | <code>DateTime?</code> | No | null | Billing period start; defaults to now on creation. |
+| `CurrentPeriodEnd` | <code>DateTime?</code> | No | null | Billing period end; calculated from the cycle on creation when omitted. |
+| `StripeSubscriptionId` | <code>string?</code> | No | null | External Stripe subscription ID; unique when set. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Application metadata; supplied updates replace the saved object. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### SubscriptionFilterDto { #SubscriptionFilterDto }
+
+Subscription filters. TypeScript requires limit and offset in a supplied object.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `limit` | <code>number</code> | Yes | 50 | Maximum page size, 1 to 100. |
+| `offset` | <code>number</code> | Yes | 0 | Nonnegative number of rows to skip. |
+| `customerKey` | <code>string \| undefined</code> | No | None | Customer key. |
+| `productKey` | <code>string \| undefined</code> | No | None | Owning product key. |
+| `planKey` | <code>string \| undefined</code> | No | None | Plan key. |
+| `status` | <code>&quot;active&quot; \| &quot;cancelled&quot; \| &quot;pending&quot; \| &quot;trial&quot; \| &quot;cancellation_pending&quot; \| &quot;expired&quot; \| undefined</code> | No | None | pending, active, trial, cancelled, cancellation_pending, or expired. |
+| `isArchived` | <code>boolean \| undefined</code> | No | None | Select archived or unarchived records; omit to include both. |
+| `sortBy` | <code>&quot;createdAt&quot; \| &quot;activationDate&quot; \| &quot;expirationDate&quot; \| &quot;currentPeriodStart&quot; \| &quot;currentPeriodEnd&quot; \| &quot;updatedAt&quot; \| undefined</code> | No | None | activationDate, expirationDate, createdAt, currentPeriodStart, or currentPeriodEnd. updatedAt currently falls back to createdAt. |
+| `sortOrder` | <code>&quot;asc&quot; \| &quot;desc&quot; \| undefined</code> | No | None | asc or desc; defaults to desc. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `CustomerKey` | <code>string?</code> | No | null | Customer key. |
+| `ProductKey` | <code>string?</code> | No | null | Owning product key. |
+| `PlanKey` | <code>string?</code> | No | null | Plan key. |
+| `Status` | <code>string?</code> | No | null | pending, active, trial, cancelled, cancellation_pending, or expired. |
+| `IsArchived` | <code>bool?</code> | No | null | Select archived or unarchived records; omit to include both. |
+| `SortBy` | <code>string?</code> | No | null | Accepted but ignored; results use createdAt descending. |
+| `SortOrder` | <code>string?</code> | No | null | Accepted but ignored; results use descending creation time. |
+| `Limit` | <code>int?</code> | No | 50 | Maximum page size, 1 to 100. |
+| `Offset` | <code>int?</code> | No | 0 | Nonnegative number of rows to skip. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### DetailedSubscriptionFilterDto { #DetailedSubscriptionFilterDto }
+
+Subscription filters. TypeScript requires limit and offset in a supplied object.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `limit` | <code>number</code> | Yes | 50 | Maximum page size, 1 to 100. |
+| `offset` | <code>number</code> | Yes | 0 | Nonnegative number of rows to skip. |
+| `customerKey` | <code>string \| undefined</code> | No | None | Customer key. |
+| `productKey` | <code>string \| undefined</code> | No | None | Owning product key. |
+| `planKey` | <code>string \| undefined</code> | No | None | Plan key. |
+| `billingCycleKey` | <code>string \| undefined</code> | No | None | Billing cycle key. |
+| `status` | <code>&quot;active&quot; \| &quot;cancelled&quot; \| &quot;pending&quot; \| &quot;trial&quot; \| &quot;cancellation_pending&quot; \| &quot;expired&quot; \| undefined</code> | No | None | pending, active, trial, cancelled, cancellation_pending, or expired. |
+| `isArchived` | <code>boolean \| undefined</code> | No | None | Select archived or unarchived records; omit to include both. |
+| `activationDateFrom` | <code>Date \| undefined</code> | No | None | Inclusive earliest activation date. |
+| `activationDateTo` | <code>Date \| undefined</code> | No | None | Inclusive latest activation date. |
+| `expirationDateFrom` | <code>Date \| undefined</code> | No | None | Inclusive earliest expiration date. |
+| `expirationDateTo` | <code>Date \| undefined</code> | No | None | Inclusive latest expiration date. |
+| `trialEndDateFrom` | <code>Date \| undefined</code> | No | None | Inclusive earliest trial end date. |
+| `trialEndDateTo` | <code>Date \| undefined</code> | No | None | Inclusive latest trial end date. |
+| `currentPeriodStartFrom` | <code>Date \| undefined</code> | No | None | Inclusive earliest current period start. |
+| `currentPeriodStartTo` | <code>Date \| undefined</code> | No | None | Inclusive latest current period start. |
+| `currentPeriodEndFrom` | <code>Date \| undefined</code> | No | None | Inclusive earliest current period end. |
+| `currentPeriodEndTo` | <code>Date \| undefined</code> | No | None | Inclusive latest current period end. |
+| `hasStripeId` | <code>boolean \| undefined</code> | No | None | Match whether a Stripe subscription ID is present. |
+| `hasTrial` | <code>boolean \| undefined</code> | No | None | Match whether a trial end date is present, including past trials. |
+| `hasFeatureOverrides` | <code>boolean \| undefined</code> | No | None | Match saved override presence after pagination; expired timed overrides still count. |
+| `featureKey` | <code>string \| undefined</code> | No | None | Accepted but currently ignored. |
+| `metadataKey` | <code>string \| undefined</code> | No | None | Accepted but currently ignored. |
+| `metadataValue` | <code>unknown</code> | No | None | Accepted but currently ignored. |
+| `sortBy` | <code>&quot;createdAt&quot; \| &quot;activationDate&quot; \| &quot;expirationDate&quot; \| &quot;currentPeriodStart&quot; \| &quot;currentPeriodEnd&quot; \| &quot;updatedAt&quot; \| undefined</code> | No | None | activationDate, expirationDate, createdAt, currentPeriodStart, or currentPeriodEnd. updatedAt currently falls back to createdAt. |
+| `sortOrder` | <code>&quot;asc&quot; \| &quot;desc&quot; \| undefined</code> | No | None | asc or desc; defaults to desc. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `CustomerKey` | <code>string?</code> | No | null | Customer key. |
+| `ProductKey` | <code>string?</code> | No | null | Owning product key. |
+| `PlanKey` | <code>string?</code> | No | null | Plan key. |
+| `BillingCycleKey` | <code>string?</code> | No | null | Billing cycle key. |
+| `Status` | <code>string?</code> | No | null | pending, active, trial, cancelled, cancellation_pending, or expired. |
+| `IsArchived` | <code>bool?</code> | No | null | Select archived or unarchived records; omit to include both. |
+| `ActivationDateFrom` | <code>DateTime?</code> | No | null | Inclusive earliest activation date. |
+| `ActivationDateTo` | <code>DateTime?</code> | No | null | Inclusive latest activation date. |
+| `ExpirationDateFrom` | <code>DateTime?</code> | No | null | Inclusive earliest expiration date. |
+| `ExpirationDateTo` | <code>DateTime?</code> | No | null | Inclusive latest expiration date. |
+| `TrialEndDateFrom` | <code>DateTime?</code> | No | null | Inclusive earliest trial end date. |
+| `TrialEndDateTo` | <code>DateTime?</code> | No | null | Inclusive latest trial end date. |
+| `CurrentPeriodStartFrom` | <code>DateTime?</code> | No | null | Inclusive earliest current period start. |
+| `CurrentPeriodStartTo` | <code>DateTime?</code> | No | null | Inclusive latest current period start. |
+| `CurrentPeriodEndFrom` | <code>DateTime?</code> | No | null | Inclusive earliest current period end. |
+| `CurrentPeriodEndTo` | <code>DateTime?</code> | No | null | Inclusive latest current period end. |
+| `HasStripeId` | <code>bool?</code> | No | null | Match whether a Stripe subscription ID is present. |
+| `HasTrial` | <code>bool?</code> | No | null | Match whether a trial end date is present, including past trials. |
+| `HasFeatureOverrides` | <code>bool?</code> | No | null | Match saved override presence after pagination; expired timed overrides still count. |
+| `FeatureKey` | <code>string?</code> | No | null | Accepted but currently ignored. |
+| `MetadataKey` | <code>string?</code> | No | null | Accepted but currently ignored. |
+| `MetadataValue` | <code>object?</code> | No | null | Accepted but currently ignored. |
+| `SortBy` | <code>string?</code> | No | null | Accepted but ignored; results use createdAt descending. |
+| `SortOrder` | <code>string?</code> | No | null | Accepted but ignored; results use descending creation time. |
+| `Limit` | <code>int?</code> | No | 50 | Maximum page size, 1 to 100. |
+| `Offset` | <code>int?</code> | No | 0 | Nonnegative number of rows to skip. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### SubscriptionAddonDto { #SubscriptionAddonDto }
+
+Attachment details returned with subscription snapshots and add-on queries.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `addon` | <code><a href="../addons/#AddonDto">AddonDto</a></code> | Yes | Not applicable | Current [add-on definition](addons.md#AddonDto). |
+| `subscriptionKey` | <code>string</code> | Yes | Not applicable | Subscription owning the attachment. |
+| `addonKey` | <code>string</code> | Yes | Not applicable | Add-on key. |
+| `quantity` | <code>number</code> | Yes | Not applicable | Number of units attached. |
+| `status` | <code>&quot;active&quot; \| &quot;cancelled&quot;</code> | Yes | Not applicable | active or cancelled. |
+| `createdAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
+| `updatedAt` | <code>string</code> | Yes | Not applicable | Last update time in UTC. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `SubscriptionKey` | <code>string</code> | Yes | Not applicable | Subscription owning the attachment. |
+| `AddonKey` | <code>string</code> | Yes | Not applicable | Add-on key. |
+| `Quantity` | <code>int</code> | Yes | Not applicable | Number of units attached. |
+| `Status` | <code>string</code> | Yes | Not applicable | active or cancelled. |
+| `CreatedAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
+| `UpdatedAt` | <code>string</code> | Yes | Not applicable | Last update time in UTC. |
+| `Addon` | <code><a href="../addons/#AddonDto">AddonDto</a>?</code> | Yes | Not applicable | Current [add-on definition](addons.md#AddonDto). |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### OverrideType { #OverrideType }
+
+Override lifetime.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Value | Meaning |
 | --- | --- |
-| _None_ | Missing subscriptions return `null`. |
+| `OverrideType.Permanent` | Retained until replaced or removed. |
+| `OverrideType.Temporary` | Removed by the explicit temporary-override clearing method. |
+| `OverrideType.Timed` | Applies only before its required future expiry. |
 
-### listSubscriptions
+</div>
+<div class="language-content" data-lang="net" markdown="1">
 
-#### Description
-Lists subscriptions using simple filters. Both libraries resolve customer, product, and plan keys and apply the resolved IDs in the database query. An unknown key returns an empty list instead of accidentally running an unfiltered query. TypeScript defaults to 50 rows and implements the documented sort fields except `updatedAt`, which currently sorts by `createdAt`. .NET has no default limit and always orders by `CreatedAt` descending, regardless of `SortBy` or `SortOrder`.
-
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    listSubscriptions(filters?: SubscriptionFilterDto): Promise<SubscriptionDto[]>
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `filters` | `SubscriptionFilterDto` | No | Optional filter object (defaults limit 50, offset 0). |
-
-    #### Input Properties
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `customerKey` | `string` | No | Filter by customer key. |
-    | `productKey` | `string` | No | Filter by product key. |
-    | `planKey` | `string` | No | Filter by plan key. |
-    | `status` | `string` | No | Filter by status. |
-    | `isArchived` | `boolean` | No | Filter by archived state. |
-    | `sortBy` | `string` | No | Sort field. `updatedAt` is accepted but currently sorts by `createdAt`. |
-    | `sortOrder` | `'asc' \| 'desc'` | No | Sort direction. |
-    | `limit` | `number` | No | Page size (default 50). |
-    | `offset` | `number` | No | Skip count (default 0). |
-
-    #### Returns
-    `Promise<SubscriptionDto[]>` – array of subscriptions matching filters.
-
-    #### Return Properties
-    Each element is `SubscriptionDto` (see createSubscription).
-
-    #### Example
-    ```typescript
-    const activeSubs = await subscriptions.listSubscriptions({
-      productKey: 'pro-suite',
-      status: 'active',
-      isArchived: false
-    });
-    activeSubs.forEach(sub => console.log(sub.customer?.displayName));
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<List<SubscriptionDto>> ListSubscriptionsAsync(SubscriptionFilterDto? filters = null)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `filters` | `SubscriptionFilterDto?` | No | Optional filter object. Omitted `Limit` means no limit; omitted `Offset` means zero. |
-
-    #### Input Properties
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `CustomerKey` | `string?` | No | Filter by customer key. |
-    | `ProductKey` | `string?` | No | Filter by product key. |
-    | `PlanKey` | `string?` | No | Filter by plan key. |
-    | `Status` | `string?` | No | Filter by status. |
-    | `IsArchived` | `bool?` | No | Filter by archived state. |
-    | `SortBy` | `string?` | No | Accepted and validated. The current repository ignores it and orders by `CreatedAt` descending. |
-    | `SortOrder` | `string?` | No | Accepted and validated. The current repository ignores it. |
-    | `Limit` | `int?` | No | Page size. No limit when omitted. |
-    | `Offset` | `int?` | No | Skip count. |
-
-    #### Returns
-    `Task<List<SubscriptionDto>>` – array of subscriptions matching filters.
-
-    #### Return Properties
-    Each element is `SubscriptionDto` (see CreateSubscriptionAsync).
-
-    #### Example
-    ```csharp
-    var activeSubs = await subscrio.Subscriptions.ListSubscriptionsAsync(new SubscriptionFilterDto(
-        ProductKey: "pro-suite",
-        Status: "active",
-        IsArchived: false
-    ));
-    foreach (var sub in activeSubs) Console.WriteLine(sub.Customer?.DisplayName);
-    ```
-
-#### Expected Results
-- Validates filters.
-- Resolves external keys to IDs; returns empty array if lookups fail.
-- Queries the status view so status filters reflect real time.
-- Each result includes the full `customer` object (CustomerDto) populated from the customers table join.
-- TypeScript returns at most 50 rows when the caller omits `limit`. .NET is unbounded when `Limit` is `null`.
-
-#### Potential Errors
-
-| Error | When |
+| Value | Meaning |
 | --- | --- |
-| `ValidationError` | Filters invalid. |
-
-### findSubscriptions
-
-#### Description
-Performs advanced filtering. Both libraries apply customer, product, plan, billing-cycle, status, archive, date-range, Stripe-ID, trial, paging, and feature-override-presence filters. TypeScript and .NET accept but do not apply `featureKey` / `FeatureKey` or the metadata filters. TypeScript applies `hasFeatureOverrides` after loading overrides. .NET applies `HasFeatureOverrides` after the database query. Sorting has the same runtime limitations described for `listSubscriptions`.
-
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    findSubscriptions(filters: DetailedSubscriptionFilterDto): Promise<SubscriptionDto[]>
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `filters` | `DetailedSubscriptionFilterDto` | Yes | Rich filter object (dates, metadata, overrides, booleans). |
-
-    #### Input Properties
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `customerKey` | `string` | No | Filter by customer key. |
-    | `productKey` | `string` | No | Filter by product key. |
-    | `planKey` | `string` | No | Filter by plan key. |
-    | `billingCycleKey` | `string` | No | Filter by billing cycle key. |
-    | `status` | `string` | No | Filter by status. |
-    | `isArchived` | `boolean` | No | Filter by archived state. |
-    | `activationDateFrom` | `Date` | No | Start of activation date range. |
-    | `activationDateTo` | `Date` | No | End of activation date range. |
-    | `expirationDateFrom` | `Date` | No | Start of expiration date range. |
-    | `expirationDateTo` | `Date` | No | End of expiration date range. |
-    | `trialEndDateFrom` | `Date` | No | Start of trial end date range. |
-    | `trialEndDateTo` | `Date` | No | End of trial end date range. |
-    | `currentPeriodStartFrom` | `Date` | No | Start of period start range. |
-    | `currentPeriodStartTo` | `Date` | No | End of period start range. |
-    | `currentPeriodEndFrom` | `Date` | No | Start of period end range. |
-    | `currentPeriodEndTo` | `Date` | No | End of period end range. |
-    | `hasStripeId` | `boolean` | No | Filter by presence of Stripe ID. |
-    | `hasTrial` | `boolean` | No | Filter by trial status. |
-    | `hasFeatureOverrides` | `boolean` | No | Filter by presence of feature overrides. |
-    | `featureKey` | `string` | No | Accepted but not applied. |
-    | `metadataKey` | `string` | No | Accepted but not applied. |
-    | `metadataValue` | `unknown` | No | Accepted but not applied. |
-    | `sortBy` | `string` | No | Sort field. `updatedAt` currently sorts by `createdAt`. |
-    | `sortOrder` | `'asc' \| 'desc'` | No | Sort direction. |
-    | `limit` | `number` | No | Page size (default 50). |
-    | `offset` | `number` | No | Skip count (default 0). |
-
-    #### Returns
-    `Promise<SubscriptionDto[]>` – array of subscriptions matching filters.
-
-    #### Return Properties
-    Each element is `SubscriptionDto` (see createSubscription).
-
-    #### Example
-    ```typescript
-    const subs = await subscriptions.findSubscriptions({
-      expirationDateFrom: new Date('2025-01-01'),
-      expirationDateTo: new Date('2025-12-31'),
-      hasFeatureOverrides: true
-    });
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<List<SubscriptionDto>> FindSubscriptionsAsync(DetailedSubscriptionFilterDto filters)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `filters` | `DetailedSubscriptionFilterDto` | Yes | Rich filter object (dates, metadata, overrides, booleans). |
-
-    #### Input Properties
-    Same as TypeScript with PascalCase (e.g. `ActivationDateFrom`, `ExpirationDateTo`, `HasFeatureOverrides`).
-
-    #### Returns
-    `Task<List<SubscriptionDto>>` – array of subscriptions matching filters.
-
-    #### Return Properties
-    Each element is `SubscriptionDto` (see CreateSubscriptionAsync).
-
-    #### Example
-    ```csharp
-    var subs = await subscrio.Subscriptions.FindSubscriptionsAsync(
-        new DetailedSubscriptionFilterDto(
-            ExpirationDateFrom: new DateTime(2025, 1, 1),
-            ExpirationDateTo: new DateTime(2025, 12, 31),
-            HasFeatureOverrides: true
-        )
-    );
-    ```
-
-#### Expected Results
-- Validates filters.
-- Resolves external keys before querying. Unknown keys return an empty list.
-- Applies key, status, archive, date-range, Stripe-ID, and trial filters against the status view.
-- Applies feature-override presence after the base query. The feature-key and metadata fields remain unused.
-- Each result includes the full `customer` object (CustomerDto) populated from the customers table join.
-
-#### Potential Errors
+| `OverrideType.Permanent` | Retained until replaced or removed. |
+| `OverrideType.Temporary` | Removed by the explicit temporary-override clearing method. |
+| `OverrideType.Timed` | Applies only before its required future expiry. |
 
-| Error | When |
-| --- | --- |
-| `ValidationError` | Filters invalid. |
+</div>
+</div>
 
-### getSubscriptionsByCustomer
+<div class="data-type" markdown="1">
 
-#### Description
-Returns all subscriptions for a specific customer key.
+### TransitionExpiredSubscriptionsReport { #TransitionExpiredSubscriptionsReport }
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    getSubscriptionsByCustomer(customerKey: string): Promise<SubscriptionDto[]>
-    ```
+Outcome of one transition-processing call.
 
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `customerKey` | `string` | Yes | Customer identifier. |
+<div class="language-content" data-lang="ts" markdown="1">
 
-    #### Returns
-    `Promise<SubscriptionDto[]>` – array of subscriptions for the customer.
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `processed` | <code>number</code> | Yes | Not applicable | Subscriptions attempted. |
+| `transitioned` | <code>number</code> | Yes | Not applicable | Replacements saved and their after-hooks completed. |
+| `archived` | <code>number</code> | Yes | Not applicable | Old subscriptions archived and their after-hooks completed. |
+| `errors` | <code>Array&lt;{ subscriptionKey: string; error: string }&gt;</code> | Yes | Not applicable | Per-subscription failures; other subscriptions continue processing. |
 
-    #### Return Properties
-    Each element is `SubscriptionDto` (see createSubscription).
+</div>
 
-    #### Example
-    ```typescript
-    const customerSubs = await subscriptions.getSubscriptionsByCustomer('cust_123');
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<List<SubscriptionDto>> GetSubscriptionsByCustomerAsync(string customerKey)
-    ```
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Processed` | <code>int</code> | Yes | Not applicable | Subscriptions attempted. |
+| `Transitioned` | <code>int</code> | Yes | Not applicable | Replacements saved and their after-hooks completed. |
+| `Archived` | <code>int</code> | Yes | Not applicable | Old subscriptions archived and their after-hooks completed. |
+| `Errors` | <code>List&lt;<a href="#TransitionError">TransitionError</a>&gt;</code> | Yes | Not applicable | Per-subscription failures; other subscriptions continue processing. |
 
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `customerKey` | `string` | Yes | Customer identifier. |
+</div>
 
-    #### Returns
-    `Task<List<SubscriptionDto>>` – array of subscriptions for the customer.
+</div>
 
-    #### Return Properties
-    Each element is `SubscriptionDto` (see CreateSubscriptionAsync).
+<div class="data-type" markdown="1">
 
-    #### Example
-    ```csharp
-    var customerSubs = await subscrio.Subscriptions.GetSubscriptionsByCustomerAsync("cust_123");
-    ```
+### FeatureOverrideDto { #FeatureOverrideDto }
 
-#### Expected Results
-- Ensures customer exists, then queries the status view for their subscriptions.
+Saved override details; expired timed overrides remain visible.
 
-#### Potential Errors
+<div class="language-content" data-lang="ts" markdown="1">
 
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Customer key missing. |
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `expiresAt` | <code>string \| null \| undefined</code> | No | Not applicable | Expiry timestamp for timed overrides; null otherwise. |
+| `isActive` | <code>boolean \| undefined</code> | No | Not applicable | False when a timed override has expired; true otherwise. |
+| `featureKey` | <code>string</code> | Yes | Not applicable | Feature key. |
+| `value` | <code>string</code> | Yes | Not applicable | Stored feature value. |
+| `type` | <code>string</code> | Yes | Not applicable | permanent, temporary, or timed. |
+| `createdAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
 
-### archiveSubscription
+</div>
 
-#### Description
-Marks a subscription as archived (preventing further updates until unarchived).
+<div class="language-content" data-lang="net" markdown="1">
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    archiveSubscription(subscriptionKey: string): Promise<void>
-    ```
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `FeatureId` | <code>long</code> | Yes | Not applicable | Internal feature identifier. |
+| `Value` | <code>string</code> | Yes | Not applicable | Stored feature value. |
+| `Type` | <code>string</code> | Yes | Not applicable | permanent, temporary, or timed. |
+| `CreatedAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
+| `FeatureKey` | <code>string?</code> | Yes | Not applicable | Feature key. |
+| `ExpiresAt` | <code>string?</code> | Yes | Not applicable | Expiry timestamp for timed overrides; null otherwise. |
+| `IsActive` | <code>bool</code> | Yes | Not applicable | False when a timed override has expired; true otherwise. |
 
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key to archive. |
+</div>
 
-    #### Returns
-    `Promise<void>` – resolves when archived.
+</div>
 
-    #### Example
-    ```typescript
-    await subscriptions.archiveSubscription('sub_legacy');
-    ```
+<div class="data-type" markdown="1">
 
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task ArchiveSubscriptionAsync(string subscriptionKey)
-    ```
+### TransitionError { #TransitionError }
 
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key to archive. |
+A failed transition, represented as an inline object in TypeScript.
 
-    #### Returns
-    `Task` – completes when archived.
+<div class="language-content" data-lang="ts" markdown="1">
 
-    #### Example
-    ```csharp
-    await subscrio.Subscriptions.ArchiveSubscriptionAsync("sub_legacy");
-    ```
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `subscriptionKey` | `string` | Yes | Not applicable | Subscription being processed. |
+| `error` | `string` | Yes | Not applicable | Failure message. |
 
-#### Expected Results
-- Loads subscription, calls entity `archive()`, persists. Status automatically reflects change via the view.
+</div>
 
-#### Potential Errors
+<div class="language-content" data-lang="net" markdown="1">
 
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Subscription missing. |
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `SubscriptionKey` | `string` | Yes | Not applicable | Subscription being processed. |
+| `Error` | `string` | Yes | Not applicable | Failure message. |
 
-### unarchiveSubscription
+</div>
 
-#### Description
-Clears the archived flag, allowing updates again.
+</div>
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    unarchiveSubscription(subscriptionKey: string): Promise<void>
-    ```
+## Related guides
 
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key to unarchive. |
-
-    #### Returns
-    `Promise<void>` – resolves when unarchived.
-
-    #### Example
-    ```typescript
-    await subscriptions.unarchiveSubscription('sub_legacy');
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task UnarchiveSubscriptionAsync(string subscriptionKey)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key to unarchive. |
-
-    #### Returns
-    `Task` – completes when unarchived.
-
-    #### Example
-    ```csharp
-    await subscrio.Subscriptions.UnarchiveSubscriptionAsync("sub_legacy");
-    ```
-
-#### Expected Results
-- Loads subscription, calls `unarchive()`, persists.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Subscription missing. |
-
-### deleteSubscription
-
-#### Description
-Deletes a subscription record irrespective of status.
-
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    deleteSubscription(subscriptionKey: string): Promise<void>
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key targeted for deletion. |
-
-    #### Returns
-    `Promise<void>` – resolves when deleted.
-
-    #### Example
-    ```typescript
-    await subscriptions.deleteSubscription('sub_deprecated');
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task DeleteSubscriptionAsync(string subscriptionKey)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key targeted for deletion. |
-
-    #### Returns
-    `Task` – completes when deleted.
-
-    #### Example
-    ```csharp
-    await subscrio.Subscriptions.DeleteSubscriptionAsync("sub_deprecated");
-    ```
-
-#### Expected Results
-- Loads subscription, ensures it exists, deletes record.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Subscription missing. |
-
-### addFeatureOverride
-
-#### Description
-Adds or updates a subscription-level feature override with optional override type (permanent or temporary).
-
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    addFeatureOverride(
-      subscriptionKey: string,
-      featureKey: string,
-      value: string,
-      overrideType?: OverrideType
-    ): Promise<void>
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Target subscription key. |
-    | `featureKey` | `string` | Yes | Feature to override. |
-    | `value` | `string` | Yes | String value validated against feature type. |
-    | `overrideType` | `OverrideType` | No | `OverrideType.Permanent` or `OverrideType.Temporary`; defaults to Permanent. |
-
-    #### Returns
-    `Promise<void>` – resolves when override is added.
-
-    #### Example
-    ```typescript
-    await subscriptions.addFeatureOverride('sub_1001', 'max-projects', '200', OverrideType.Temporary);
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task AddFeatureOverrideAsync(
-        string subscriptionKey,
-        string featureKey,
-        string value,
-        OverrideType overrideType = OverrideType.Permanent
-    )
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Target subscription key. |
-    | `featureKey` | `string` | Yes | Feature to override. |
-    | `value` | `string` | Yes | String value validated against feature type. |
-    | `overrideType` | `OverrideType` | No | `OverrideType.Permanent` or `OverrideType.Temporary`; defaults to Permanent. |
-
-    #### Returns
-    `Task` – completes when override is added.
-
-    #### Example
-    ```csharp
-    await subscrio.Subscriptions.AddFeatureOverrideAsync(
-        "sub_1001",
-        "max-projects",
-        "200",
-        OverrideType.Temporary
-    );
-    ```
-
-#### Expected Results
-- Loads subscription; rejects if archived.
-- Loads feature and validates value via `FeatureValueValidator`.
-- Adds override (replacing existing entry) and saves.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Subscription or feature missing. |
-| `DomainError` | Subscription archived. |
-| `ValidationError` | Value incompatible with feature type. |
-
-### removeFeatureOverride
-
-#### Description
-Removes a specific feature override from a subscription.
-
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    removeFeatureOverride(subscriptionKey: string, featureKey: string): Promise<void>
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key. |
-    | `featureKey` | `string` | Yes | Feature key to remove. |
-
-    #### Returns
-    `Promise<void>` – resolves when override is removed.
-
-    #### Example
-    ```typescript
-    await subscriptions.removeFeatureOverride('sub_1001', 'max-projects');
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task RemoveFeatureOverrideAsync(string subscriptionKey, string featureKey)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key. |
-    | `featureKey` | `string` | Yes | Feature key to remove. |
-
-    #### Returns
-    `Task` – completes when override is removed.
-
-    #### Example
-    ```csharp
-    await subscrio.Subscriptions.RemoveFeatureOverrideAsync("sub_1001", "max-projects");
-    ```
-
-#### Expected Results
-- Ensures subscription exists and is not archived.
-- Removes override if present and persists.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Subscription missing. |
-| `DomainError` | Subscription archived. |
-
-### clearTemporaryOverrides
-
-#### Description
-Deletes only temporary overrides for a subscription; permanent overrides are retained.
-
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    clearTemporaryOverrides(subscriptionKey: string): Promise<void>
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key. |
-
-    #### Returns
-    `Promise<void>` – resolves when temporary overrides are cleared.
-
-    #### Example
-    ```typescript
-    await subscriptions.clearTemporaryOverrides('sub_1001');
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task ClearTemporaryOverridesAsync(string subscriptionKey)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `subscriptionKey` | `string` | Yes | Subscription key. |
-
-    #### Returns
-    `Task` – completes when temporary overrides are cleared.
-
-    #### Example
-    ```csharp
-    await subscrio.Subscriptions.ClearTemporaryOverridesAsync("sub_1001");
-    ```
-
-#### Expected Results
-- Ensures subscription exists and is active.
-- Removes overrides flagged as temporary and saves.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Subscription missing. |
-| `DomainError` | Subscription archived. |
-
-### transitionExpiredSubscriptions
-
-#### Description
-Processes expired subscriptions and automatically transitions them to configured plans. The method finds expired subscriptions whose plans have an `onExpireTransitionToBillingCycleKey`, creates each replacement subscription first, and archives the old subscription only after replacement creation succeeds.
-
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    transitionExpiredSubscriptions(): Promise<TransitionExpiredSubscriptionsReport>
-    ```
-
-    #### Inputs
-    None – automatically finds expired subscriptions with transition plans.
-
-    #### Returns
-    `Promise<TransitionExpiredSubscriptionsReport>` – report with counts and errors.
-
-    #### Return Properties
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `processed` | `number` | Total subscriptions processed. |
-    | `transitioned` | `number` | Subscriptions successfully transitioned. |
-    | `archived` | `number` | Subscriptions archived. |
-    | `errors` | `Array<{subscriptionKey: string, error: string}>` | Errors encountered during processing. |
-
-    #### Example
-    ```typescript
-    const report = await subscriptions.transitionExpiredSubscriptions();
-    console.log(`Processed: ${report.processed}, Transitioned: ${report.transitioned}`);
-    report.errors.forEach(err => console.error(`${err.subscriptionKey}: ${err.error}`));
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<TransitionExpiredSubscriptionsReport> TransitionExpiredSubscriptionsAsync()
-    ```
-
-    #### Inputs
-    None – automatically finds expired subscriptions with transition plans.
-
-    #### Returns
-    `Task<TransitionExpiredSubscriptionsReport>` – report with counts and errors.
-
-    #### Return Properties
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `Processed` | `int` | Total subscriptions processed. |
-    | `Transitioned` | `int` | Subscriptions successfully transitioned. |
-    | `Archived` | `int` | Subscriptions archived. |
-    | `Errors` | `List<TransitionError>` | Errors encountered (`SubscriptionKey`, `Error`). |
-
-    #### Example
-    ```csharp
-    var report = await subscrio.Subscriptions.TransitionExpiredSubscriptionsAsync();
-    Console.WriteLine($"Processed: {report.Processed}, Transitioned: {report.Transitioned}");
-    foreach (var err in report.Errors) Console.WriteLine($"{err.SubscriptionKey}: {err.Error}");
-    ```
-
-#### Expected Results
-- Queries expired subscriptions (status='expired', not archived) with transition-enabled plans using an optimized database join.
-- For each expired subscription:
-  - Creates and persists the replacement subscription for the transition billing cycle
-  - Marks the old subscription as transitioned only after replacement creation succeeds, setting `isArchived = true` and the transition timestamp
-  - Generates versioned subscription key: `original-key` → `original-key-v1` (or increments if already versioned)
-  - Preserves metadata from old subscription
-  - Does not carry over feature overrides or Stripe subscription IDs
-- Returns a report of processed, transitioned, and archived subscriptions.
-
-#### Potential Errors
-Errors are captured in the report's `errors` array rather than thrown. Common errors include:
-- Plan not found
-- Customer not found
-- Billing cycle not found
-- Generated subscription key already exists
-
-#### Usage Notes
-- **When to call**: Typically run as a scheduled job (cron, background worker) to process expired subscriptions periodically.
-- **Idempotent**: Safe to run multiple times; only processes subscriptions that haven't been transitioned yet.
-- **Stripe integration**: Original Stripe subscription ID remains on the archived subscription. The new subscription does not have a Stripe ID (you may need to create a new Stripe subscription if using Stripe).
-- **Query optimization**: Uses an optimized database query with joins to only fetch expired subscriptions whose plans have transition requirements.
-
-> Need the full explanation of how each status works? See [`subscription-lifecycle.md`](./subscription-lifecycle.md) for detailed rules, diagrams, and practical guidance.
-
-## DTO Reference
-
-### CreateSubscriptionDto
-
-=== "TypeScript"
-    | Field | Type | Required | Notes |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | 1–255 chars, alphanumeric with `-`/`_`. |
-    | `customerKey` | `string` | Yes | Existing customer key. |
-    | `billingCycleKey` | `string` | Yes | Existing billing cycle key (derives plan/product). |
-    | `activationDate` | `string \| Date` | No | Defaults to current time. |
-    | `expirationDate` | `string \| Date` | No | Optional. |
-    | `cancellationDate` | `string \| Date` | No | Optional. |
-    | `trialEndDate` | `string \| Date` | No | Optional; influences `trial` status. |
-    | `currentPeriodStart` | `string \| Date` | No | Defaults to now. |
-    | `currentPeriodEnd` | `string \| Date` | No | Calculated from billing cycle if omitted. |
-    | `stripeSubscriptionId` | `string` | No | Optional Stripe linkage; must be unique. |
-    | `metadata` | `Record<string, unknown>` | No | Free-form. |
-
-=== ".NET"
-    | Property | Type | Required | Notes |
-    | --- | --- | --- | --- |
-    | `Key` | `string` | Yes | 1–255 chars, alphanumeric with `-`/`_`. |
-    | `CustomerKey` | `string` | Yes | Existing customer key. |
-    | `BillingCycleKey` | `string` | Yes | Existing billing cycle key (derives plan/product). |
-    | `ActivationDate` | `DateTime?` | No | Defaults to current time. |
-    | `ExpirationDate` | `DateTime?` | No | Optional. |
-    | `CancellationDate` | `DateTime?` | No | Optional. |
-    | `TrialEndDate` | `DateTime?` | No | Optional; influences `trial` status. |
-    | `CurrentPeriodStart` | `DateTime?` | No | Defaults to now. |
-    | `CurrentPeriodEnd` | `DateTime?` | No | Calculated from billing cycle if omitted. |
-    | `StripeSubscriptionId` | `string` | No | Optional Stripe linkage; must be unique. |
-    | `Metadata` | `Dictionary<string, object?>` | No | Free-form. |
-
-### UpdateSubscriptionDto
-
-=== "TypeScript"
-    Fields optional: `billingCycleKey`, `expirationDate`, `cancellationDate`, `trialEndDate`, `clearTrialEndDate`, `currentPeriodStart`, `currentPeriodEnd`, `stripeSubscriptionId`, `metadata`. Activation date and customer key are immutable. Omission leaves the trial end unchanged. Set `clearTrialEndDate: true` to remove it. The Stripe subscription ID can be replaced but not explicitly cleared.
-
-=== ".NET"
-    Properties optional: `BillingCycleKey`, `ExpirationDate`, `CancellationDate`, `TrialEndDate`, `ClearTrialEndDate`, `CurrentPeriodStart`, `CurrentPeriodEnd`, `StripeSubscriptionId`, `Metadata`. Activation date and customer key are immutable in the normal service API. Omission leaves the trial end unchanged. Set `ClearTrialEndDate: true` to remove it. A non-null Stripe subscription ID is written, but the DTO has no explicit clear operation.
-
-### SubscriptionDto
-
-=== "TypeScript"
-    | Field | Type | Required | Notes |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Subscription identifier. |
-    | `customerKey` | `string` | Yes | Derived from customer. |
-    | `productKey` | `string` | Yes | Derived from plan. |
-    | `planKey` | `string` | Yes | Derived from billing cycle. |
-    | `billingCycleKey` | `string` | Yes | |
-    | `status` | `string` | Yes | `'pending'`, `'active'`, `'trial'`, `'cancelled'`, `'cancellation_pending'`, or `'expired'`. |
-    | `isArchived` | `boolean` | Yes | Archive flag. |
-    | `activationDate` | `string \| null` | No | |
-    | `expirationDate` | `string \| null` | No | |
-    | `cancellationDate` | `string \| null` | No | |
-    | `trialEndDate` | `string \| null` | No | |
-    | `currentPeriodStart` | `string \| null` | No | |
-    | `currentPeriodEnd` | `string \| null` | No | `null` when billing cycle duration is `forever`. |
-    | `stripeSubscriptionId` | `string \| null` | No | |
-    | `metadata` | `Record<string, unknown> \| null` | No | |
-    | `customer` | `CustomerDto \| null` | No | Full customer object from join (`listSubscriptions`, `findSubscriptions`). |
-    | `featureOverrides` | `FeatureOverrideDto[]` | No | Loaded overrides. An empty array means the subscription has no overrides. This field is currently TypeScript-only. |
-    | `createdAt` | `string` | Yes | ISO timestamp. |
-    | `updatedAt` | `string` | Yes | ISO timestamp. |
-
-=== ".NET"
-    | Property | Type | Required | Notes |
-    | --- | --- | --- | --- |
-    | `Key` | `string` | Yes | Subscription identifier. |
-    | `CustomerKey` | `string` | Yes | Derived from customer. |
-    | `ProductKey` | `string` | Yes | Derived from plan. |
-    | `PlanKey` | `string` | Yes | Derived from billing cycle. |
-    | `BillingCycleKey` | `string` | Yes | |
-    | `Status` | `string` | Yes | `'pending'`, `'active'`, `'trial'`, `'cancelled'`, `'cancellation_pending'`, or `'expired'`. |
-    | `IsArchived` | `bool` | Yes | Archive flag. |
-    | `ActivationDate` | `string?` | No | ISO timestamp. |
-    | `ExpirationDate` | `string?` | No | ISO timestamp. |
-    | `CancellationDate` | `string?` | No | ISO timestamp. |
-    | `TrialEndDate` | `string?` | No | ISO timestamp. |
-    | `CurrentPeriodStart` | `string?` | No | ISO timestamp. |
-    | `CurrentPeriodEnd` | `string?` | No | `null` when billing cycle duration is `forever`. |
-    | `StripeSubscriptionId` | `string?` | No | |
-    | `Metadata` | `Dictionary<string, object?>?` | No | |
-    | `Customer` | `CustomerDto?` | No | Full customer object from join (`ListSubscriptionsAsync`, `FindSubscriptionsAsync`). |
-    | `CreatedAt` | `string` | Yes | ISO timestamp. |
-    | `UpdatedAt` | `string` | Yes | ISO timestamp. |
-
-.NET loads feature overrides while constructing its domain subscription, but the current .NET `SubscriptionDto` does not expose them. Use the feature-checker and override-management methods when consuming the .NET application API.
-
-### FeatureOverrideDto
-
-=== "TypeScript"
-    | Field | Type | Notes |
-    | --- | --- | --- |
-    | `featureKey` | `string` | Public feature key. |
-    | `value` | `string` | Stored override value. |
-    | `type` | `string` | Override type, such as `permanent` or `temporary`. |
-    | `createdAt` | `string` | ISO timestamp. |
-
-=== ".NET"
-    .NET declares a lower-level `FeatureOverrideDto` with `FeatureId`, `Value`, `Type`, and `CreatedAt`, but it is not attached to the application `SubscriptionDto` response.
-
-### SubscriptionFilterDto
-
-=== "TypeScript"
-    | Field | Type | Required | Notes |
-    | --- | --- | --- | --- |
-    | `customerKey` | `string` | No | |
-    | `productKey` | `string` | No | |
-    | `planKey` | `string` | No | |
-    | `status` | Subscription status string | No | Filters by computed status. |
-    | `isArchived` | `boolean` | No | `true` archived, `false` non-archived, `undefined` all. |
-    | `sortBy` | `'activationDate' \| 'expirationDate' \| 'createdAt' \| 'updatedAt' \| 'currentPeriodStart' \| 'currentPeriodEnd'` | No | `updatedAt` is accepted but currently orders by `createdAt`. |
-    | `sortOrder` | `'asc' \| 'desc'` | No | |
-    | `limit` | `number` | No | Schema default 50. The parsed default is passed to both list methods, so omission returns at most 50 rows. |
-    | `offset` | `number` | No | ≥0 (default 0 in the schema). |
-
-=== ".NET"
-    | Property | Type | Required | Notes |
-    | --- | --- | --- | --- |
-    | `CustomerKey` | `string` | No | |
-    | `ProductKey` | `string` | No | |
-    | `PlanKey` | `string` | No | |
-    | `Status` | `string` | No | Filters by computed status. |
-    | `IsArchived` | `bool?` | No | `true` archived, `false` non-archived, `null` all. |
-    | `SortBy` | `string?` | No | Accepted; .NET repository currently ignores sort and orders by `CreatedAt` descending. |
-    | `SortOrder` | `string?` | No | Accepted; .NET repository currently ignores sort. |
-    | `Limit` | `int?` | No | No limit when omitted. |
-    | `Offset` | `int?` | No | ≥0. |
-
-### DetailedSubscriptionFilterDto
-
-=== "TypeScript"
-    Extends `SubscriptionFilterDto` with:
-    - `billingCycleKey`
-    - `isArchived` – `true` archived, `false` non-archived, `undefined` all
-    - Date ranges: `activationDateFrom/To`, `expirationDateFrom/To`, `trialEndDateFrom/To`, `currentPeriodStartFrom/To`, `currentPeriodEndFrom/To`
-    - Booleans: `hasStripeId`, `hasTrial`, `hasFeatureOverrides`
-    - `featureKey`, `metadataKey`, `metadataValue` — accepted and unused
-    - Pagination/sorting same as above.
-
-=== ".NET"
-    Extends `SubscriptionFilterDto` with:
-    - `BillingCycleKey`
-    - `IsArchived` – `true` archived, `false` non-archived, `null` all
-    - Date ranges: `ActivationDateFrom/To`, `ExpirationDateFrom/To`, `TrialEndDateFrom/To`, `CurrentPeriodStartFrom/To`, `CurrentPeriodEndFrom/To`, all applied by the repository
-    - Booleans: `HasStripeId` and `HasTrial`, applied by the repository; `HasFeatureOverrides`, applied after the base query
-    - `FeatureKey`, `MetadataKey`, `MetadataValue` — accepted and unused
-    - Pagination and sorting are the same as above. Requested sorting is ignored and results are ordered by `CreatedAt` descending.
-
-## Related Workflows
-- `FeatureCheckerService` relies on subscription data for resolving feature access; keep overrides up to date.
-- `StripeIntegrationService` uses subscription CRUD for webhook synchronization.
-- When deleting or transitioning plans/billing cycles, ensure subscriptions point to valid entities; run your own data migrations when changing plan relationships.
-- **Subscription Transitions**: Use `transitionExpiredSubscriptions()` to automatically migrate expired subscriptions to new plans. Typically run as a scheduled job (cron, background worker) to process expired subscriptions periodically. See [`subscription-lifecycle.md`](./subscription-lifecycle.md) for details on transition behavior.
-- Subscription mutations and transitions emit before/after [hooks](./hooks.md). See [How to Extend](./how-to-extend.md) for packaging audit-log and payments extensions.
+- [Subscription Lifecycle](subscription-lifecycle.md): status, dates, and expiration transitions.
+- [How Subscrio Works](entitlements-guide.md): choosing overrides or add-ons.
+- [How Feature Values Are Calculated](feature-resolution.md): how saved values contribute to access.
+- [Hooks](hooks.md): subscription mutation events.
+- [Billing Cycles](billing-cycles.md): duration calculations and month-end differences.

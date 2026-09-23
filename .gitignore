@@ -68,3 +68,8 @@ tmp
 
 # uv Python package manager
 uv.lock
+
+# Runnable documentation fixtures
+examples/**/node_modules/
+examples/**/bin/
+examples/**/obj/

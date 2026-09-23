@@ -1,0 +1,17 @@
+{
+  "name": "subscrio-doc-examples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "tsx run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "subscrio": "0.5.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "@types/node": "^22"
+  }
+}

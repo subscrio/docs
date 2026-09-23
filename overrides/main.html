@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block extrahead %}
+  <script>try{document.documentElement.dataset.docsLanguage=localStorage.getItem('subscrio.docs.language')==='net'?'net':'ts'}catch{document.documentElement.dataset.docsLanguage='ts'}</script>
+  <link rel="stylesheet" href="{{ 'assets/stylesheets/reference.css' | url }}">
   <link rel="stylesheet" href="{{ 'assets/stylesheets/custom.a2a27114.min.css' | url }}">
   <link rel="stylesheet" href="{{ 'assets/stylesheets/subscrio.css' | url }}">
   {% if page.meta and page.meta.title %}
@@ -66,5 +68,13 @@
 {% endblock %}
 {% block scripts %}
   {{ super() }}
+  <script src="{{ 'assets/javascripts/docs-language.js' | url }}"></script>
   <script src="{{ 'assets/javascripts/custom.a0168cc8.min.js' | url }}"></script>
+{% endblock %}
+
+{% block content %}
+  <noscript><p class="language-notice">Showing TypeScript. Enable JavaScript to switch documentation languages.</p></noscript>
+  {% if page.meta and page.meta.reference_format %}<div class="reference-page">{% endif %}
+  {{ super() }}
+  {% if page.meta and page.meta.reference_format %}</div>{% endif %}
 {% endblock %}

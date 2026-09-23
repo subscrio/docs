@@ -1,0 +1,61 @@
+/* One preference controls old tab content and converted reference pages alike. */
+html { overflow-anchor: none; }
+html:not([data-docs-language="net"]) [data-lang="net"],
+html[data-docs-language="net"] [data-lang="ts"],
+[data-lang][hidden] { display: none !important; }
+
+.docs-language {
+  display: flex;
+  flex-shrink: 0;
+  gap: .15rem;
+  padding: .15rem;
+  border: 1px solid var(--subscrio-rule-dark);
+  border-radius: 4px;
+  margin-inline: .4rem;
+}
+.docs-language button {
+  padding: .28rem .45rem;
+  border-radius: 2px;
+  font-size: .64rem;
+  color: var(--subscrio-ink-soft);
+  cursor: pointer;
+}
+.docs-language button[aria-pressed="true"] {
+  background: var(--subscrio-brand-pale);
+  color: var(--subscrio-brand-dark);
+  font-weight: 600;
+}
+.language-content { margin-block: .6rem; }
+.language-notice { font-size: .75rem; }
+.md-main__inner:has(.reference-page) { max-width: 75rem; }
+.reference-page { font-size: .76rem; line-height: 1.55; }
+.reference-page h2 { margin-top: 2rem; font-size: 1.3rem; }
+.reference-page h3 { scroll-margin-top: 5rem; }
+.reference-page .method-entry { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--subscrio-rule); }
+.reference-page .method-entry h3 { margin: 0 0 .4rem; font-family: var(--subscrio-font-mono); font-size: 1rem; }
+.reference-page .method-entry p, .reference-page .method-entry ul { margin-block: .5rem; }
+.reference-page .method-entry li { margin-block: .25rem; }
+.reference-page .method-entry .highlight { margin-block: .5rem; }
+.reference-page .method-entry pre > code { padding: .65rem .75rem; }
+.reference-page .method-entry .signature pre > code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.reference-page .method-errors, .reference-page .additional-example { margin: .6rem 0; font-size: .75rem; }
+.reference-page .method-errors,
+.reference-page .additional-example { border: 0; box-shadow: none; background: transparent; padding: 0; }
+.reference-page .method-errors > summary,
+.reference-page .additional-example > summary { margin: 0; padding: .3rem 1rem .3rem 0; background: transparent; }
+.reference-page .method-errors > summary::before,
+.reference-page .additional-example > summary::before { display: none; }
+.reference-page details > summary { cursor: pointer; }
+.reference-page table { display: table; width: 100%; }
+.reference-page td code { overflow-wrap: anywhere; }
+.reference-page .data-type { scroll-margin-top: 5rem; }
+.reference-page .compatibility-anchor { scroll-margin-top: 5rem; }
+@media (max-width: 600px) {
+  .md-header__title { flex: 1; min-width: 0; margin-left: 0; }
+  .docs-language { margin-inline: .15rem; }
+  .docs-language button { padding: .25rem .3rem; }
+  .reference-page .method-entry h3 { overflow-wrap: anywhere; }
+}
+@media print {
+  .docs-language { display: none; }
+}

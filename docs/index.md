@@ -1,87 +1,47 @@
 ---
-title: Feature entitlements for .NET and TypeScript
-description: API reference and guides for Subscrio. Install the library, define products and plans, assign subscriptions, and resolve feature access in .NET or TypeScript.
+title: Welcome
+description: Learn how to define plans, check feature access, track usage, and manage credits with Subscrio.
 ---
 
-# Subscrio documentation
+# Welcome
 
-Subscrio is an open-source entitlement engine for .NET and TypeScript. It turns plans, packages, purchases, and customer agreements into feature access that your application resolves from its own database.
+Subscrio is an open-source library for deciding what a customer can use in your product. Your application stores the catalog and customer agreements in its own database, then calls the TypeScript or .NET library to check access and record consumption.
 
-Use these docs to install the library, define products and plans, assign customer subscriptions, resolve feature values, and integrate billing events.
+<span id="subscrio-documentation"></span>
+<span id="start-with-your-implementation"></span>
+<span id="the-entitlement-model"></span>
+<span id="define-the-catalog-once"></span>
+<span id="keep-neighboring-responsibilities-separate"></span>
+<span id="stripe-events"></span>
+<span id="reference"></span>
+<span id="beyond-static-plan-values"></span>
 
-## Start with your implementation
+## Start here
 
-=== "TypeScript"
+[Getting Started](reference/getting-started.md) walks through installation, a small catalog, a customer subscription, and a feature check. TypeScript uses PostgreSQL and requires Node.js 20.19 or newer. .NET targets .NET 8, 9, and 10 and supports PostgreSQL or SQL Server.
 
-    Install the `subscrio` npm package and connect it to PostgreSQL.
+Use the language selector in the header to switch examples throughout the site.
 
-    ```bash
-    npm install subscrio
-    ```
+## Choose what your application needs
 
-    [Follow the TypeScript and .NET getting-started guide](reference/getting-started.md)
+| Requirement | Where to start |
+| --- | --- |
+| Enable features or set limits by plan | [How Subscrio Works](reference/entitlements-guide.md) |
+| Offer extra seats or make a customer-specific exception | [Add-ons and Overrides](reference/addons-and-overrides.md) |
+| Combine allowances from several subscriptions | [How Feature Values Are Calculated](reference/feature-resolution.md) |
+| Enforce a recurring quota | [Metered Usage Workflows](reference/metered-usage-workflows.md) |
+| Let several actions spend a shared balance | [Credit Wallet Workflows](reference/credit-wallet-workflows.md) |
+| Manage trials, cancellation, or expiration | [Subscription Lifecycle](reference/subscription-lifecycle.md) |
+| Keep catalog configuration consistent across environments | [Managing Configuration](reference/managing-configuration.md) |
 
-    ABP applications can keep using `IFeatureChecker` with the optional [`Subscrio.Abp` integration](reference/abp-integration.md).
+## Where Subscrio fits
 
-=== ".NET"
+Features define the values your application understands. Products group features and plans. A subscription gives a customer a plan through a billing cycle. Add-ons contribute additional values; overrides express individual exceptions. Metering counts use against an allowance, while credits account for a spendable balance.
 
-    Install `Subscrio.Core` and connect it to PostgreSQL or SQL Server.
+Subscrio does not collect payments, authenticate requests, decide which user owns a customer account, or perform your application's work. Your application combines its access checks with those responsibilities. A numeric seat limit, for example, tells you the allowed number; your application counts the seats already assigned.
 
-    ```bash
-    dotnet add package Subscrio.Core
-    ```
+## Integrate and operate
 
-    [Follow the TypeScript and .NET getting-started guide](reference/getting-started.md)
+Use [Stripe Setup](reference/how-to-integrate-with-stripe.md) to map billing events to subscriptions, or [Extending Subscrio](reference/how-to-extend.md) for hooks, audit records, and payment tracking. The [Relationships](reference/relationships.md) page explains the stored model; [Schema Upgrade](reference/upgrading-entitlements.md) covers existing installations.
 
-## The entitlement model
-
-Subscrio connects a small set of records:
-
-- A **product** groups a feature catalog.
-- A **feature** defines a toggle, numeric limit, or text value with a default.
-- A **plan** assigns values to features in its product.
-- A **billing cycle** supplies the timing used by a subscription.
-- A **customer** receives a plan through a **subscription**.
-- A **subscription override** changes one feature value for a specific customer agreement.
-
-Feature resolution checks a valid subscription override first, then the plan value, then the feature default.
-
-[Read the core overview](reference/core-overview.md) or [open the feature checker reference](reference/feature-checker.md).
-
-## Define the catalog once
-
-Create catalog records through the public services, keep them in a version-controlled JSON file, or build a typed `ConfigSyncDto` in code. Configuration sync gives each environment the same products, features, plans, billing cycles, and plan values.
-
-[Configure and sync the entitlement catalog](reference/config-sync.md).
-
-## Keep neighboring responsibilities separate
-
-Subscrio does not process payments, run feature rollouts, replace RBAC, or activate device licenses.
-
-- A billing provider or internal system can update Subscrio subscriptions.
-- A feature flag can control rollout after the customer entitlement passes.
-- Authorization can decide which users inside an entitled account may perform an action.
-- Installation and device licensing remain separate from account-level feature access.
-
-## Stripe events
-
-The Stripe integration accepts supported, verified events and maintains the matching customer subscription data. If your application receives the webhook, verify its signature before passing it to Subscrio. TypeScript can verify with `subscrio.stripe.constructStripeEvent`. .NET can verify with `StripeConfig.ConstructStripeEvent`. The optional [Subscrio Web Admin](https://subscrio.com/admin/) can act as the Stripe webhook endpoint instead.
-
-[Integrate Stripe events](reference/how-to-integrate-with-stripe.md).
-
-## Reference
-
-- [Products](reference/products.md)
-- [Features](reference/features.md)
-- [Plans](reference/plans.md)
-- [Billing cycles](reference/billing-cycles.md)
-- [Customers](reference/customers.md)
-- [Subscriptions](reference/subscriptions.md)
-- [Subscription lifecycle](reference/subscription-lifecycle.md)
-- [Feature checker](reference/feature-checker.md)
-- [Hooks](reference/hooks.md)
-- [How to extend Subscrio](reference/how-to-extend.md)
-- [ABP integration](reference/abp-integration.md)
-- [Configuration sync](reference/config-sync.md)
-- [How to integrate with Stripe](reference/how-to-integrate-with-stripe.md)
-- [Relationships](reference/relationships.md)
+The [Library Reference](reference/core-overview.md) documents each public object, its methods, and its data types.

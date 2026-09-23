@@ -1,448 +1,2427 @@
 ---
 title: Hooks
-description: Observe or mutate customer, subscription, and Stripe writes with before and after hook events in the TypeScript and .NET libraries.
+description: Register handlers for customer, subscription, Stripe, usage, and credit events.
+reference_format: true
 ---
 
 # Hooks
 
-Hooks let implementors observe and optionally mutate customer and subscription writes, plus inbound Stripe events. Every domain mutation emits a **before** event and an **after** event.
+## Purpose
 
-See also: [How to Extend](./how-to-extend.md) for packaging extensions and the audit-log and payments examples.
+<span id="config-time-registration" class="compatibility-anchor"></span>
+<span id="runtime-registration" class="compatibility-anchor"></span>
+<span id="aborting-a-mutation-before-only" class="compatibility-anchor"></span>
+<span id="mutating-proposed-data-before-only" class="compatibility-anchor"></span>
+<span id="migration-from-old-event-names" class="compatibility-anchor"></span>
+<span id="coverage" class="compatibility-anchor"></span>
+<span id="related-workflows" class="compatibility-anchor"></span>
+<span id="add-on-usage-and-credit-hooks" class="compatibility-anchor"></span>
 
-## Accessing Hooks
+<span id="accessing-hooks" class="compatibility-anchor"></span>
+<span id="before-and-after" class="compatibility-anchor"></span>
+<span id="mutation-rules-for-before-hooks" class="compatibility-anchor"></span>
+<span id="fields-copied-from-customer-hooks" class="compatibility-anchor"></span>
+<span id="fields-copied-from-subscription-hooks" class="compatibility-anchor"></span>
+<span id="entityid-and-customerid" class="compatibility-anchor"></span>
+<span id="throw-semantics" class="compatibility-anchor"></span>
+<span id="event-catalog" class="compatibility-anchor"></span>
+<span id="customer" class="compatibility-anchor"></span>
+<span id="subscription" class="compatibility-anchor"></span>
+<span id="stripe-inbound" class="compatibility-anchor"></span>
+<span id="payload-shape" class="compatibility-anchor"></span>
+<span id="domain-mutation-payload" class="compatibility-anchor"></span>
+<span id="stripe-received-payload" class="compatibility-anchor"></span>
+<span id="registration-api" class="compatibility-anchor"></span>
 
-=== "TypeScript"
-    ```typescript
-    import { Subscrio, HookEvents } from 'subscrio';
+Hooks let application code validate or adjust proposed changes before saving and react after saving. Handlers run sequentially in registration order. A thrown error stops later handlers; after-hook failure does not undo an already-saved operation.
 
-    const subscrio = new Subscrio({
-      database: { connectionString: process.env.DATABASE_URL! }
-    });
+## Access and initialization
 
-    const hooks = subscrio.hooks;
-    ```
+### Access
 
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
-    using Subscrio.Core.Application.Hooks;
+<div class="language-content" data-lang="ts" markdown="1">
 
-    var subscrio = new Subscrio(config);
-    var hooks = subscrio.Hooks;
-    ```
+```typescript
+const hooks = subscrio.hooks;
+```
 
-## Before vs After
+</div>
+<div class="language-content" data-lang="net" markdown="1">
 
-| Phase | Event suffix | When it runs | Mutate `new`? | Throw aborts write? |
+```csharp
+using Subscrio.Core.Application.Hooks;
+
+var hooks = subscrio.Hooks;
+```
+
+</div>
+
+TypeScript registers events through `on`; .NET provides one named registration method per event. Construction-time registration uses [HooksConfig](#HooksConfig). Domain events have old/new snapshots; accounting events have input/result payloads.
+
+## Method catalog
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Method | Purpose |
+| --- | --- |
+| [`on`](#on) | Registers a handler and returns an unsubscribe function. |
+| [`off`](#off) | Removes a handler. |
+| [`hasListeners`](#haslisteners) | Checks registrations for diagnostics. |
+| [`emit`](#emit) | Dispatches a payload without persisting data. |
+
+</div>
+<div class="language-content" data-lang="net" markdown="1">
+
+| Method | Purpose |
+| --- | --- |
+| [`OnCustomerCreatedBefore`](#oncustomercreatedbefore) | Registers a before handler. |
+| [`OnCustomerCreatedAfter`](#oncustomercreatedafter) | Registers an after handler. |
+| [`OnCustomerUpdatedBefore`](#oncustomerupdatedbefore) | Registers a before handler. |
+| [`OnCustomerUpdatedAfter`](#oncustomerupdatedafter) | Registers an after handler. |
+| [`OnCustomerArchivedBefore`](#oncustomerarchivedbefore) | Registers a before handler. |
+| [`OnCustomerArchivedAfter`](#oncustomerarchivedafter) | Registers an after handler. |
+| [`OnCustomerUnarchivedBefore`](#oncustomerunarchivedbefore) | Registers a before handler. |
+| [`OnCustomerUnarchivedAfter`](#oncustomerunarchivedafter) | Registers an after handler. |
+| [`OnCustomerDeletedBefore`](#oncustomerdeletedbefore) | Registers a before handler. |
+| [`OnCustomerDeletedAfter`](#oncustomerdeletedafter) | Registers an after handler. |
+| [`OnSubscriptionCreatedBefore`](#onsubscriptioncreatedbefore) | Registers a before handler. |
+| [`OnSubscriptionCreatedAfter`](#onsubscriptioncreatedafter) | Registers an after handler. |
+| [`OnSubscriptionUpdatedBefore`](#onsubscriptionupdatedbefore) | Registers a before handler. |
+| [`OnSubscriptionUpdatedAfter`](#onsubscriptionupdatedafter) | Registers an after handler. |
+| [`OnSubscriptionArchivedBefore`](#onsubscriptionarchivedbefore) | Registers a before handler. |
+| [`OnSubscriptionArchivedAfter`](#onsubscriptionarchivedafter) | Registers an after handler. |
+| [`OnSubscriptionUnarchivedBefore`](#onsubscriptionunarchivedbefore) | Registers a before handler. |
+| [`OnSubscriptionUnarchivedAfter`](#onsubscriptionunarchivedafter) | Registers an after handler. |
+| [`OnSubscriptionDeletedBefore`](#onsubscriptiondeletedbefore) | Registers a before handler. |
+| [`OnSubscriptionDeletedAfter`](#onsubscriptiondeletedafter) | Registers an after handler. |
+| [`OnSubscriptionFeatureOverrideAddedBefore`](#onsubscriptionfeatureoverrideaddedbefore) | Registers a before handler. |
+| [`OnSubscriptionFeatureOverrideAddedAfter`](#onsubscriptionfeatureoverrideaddedafter) | Registers an after handler. |
+| [`OnSubscriptionFeatureOverrideRemovedBefore`](#onsubscriptionfeatureoverrideremovedbefore) | Registers a before handler. |
+| [`OnSubscriptionFeatureOverrideRemovedAfter`](#onsubscriptionfeatureoverrideremovedafter) | Registers an after handler. |
+| [`OnSubscriptionTemporaryOverridesClearedBefore`](#onsubscriptiontemporaryoverridesclearedbefore) | Registers a before handler. |
+| [`OnSubscriptionTemporaryOverridesClearedAfter`](#onsubscriptiontemporaryoverridesclearedafter) | Registers an after handler. |
+| [`OnStripeReceivedBefore`](#onstripereceivedbefore) | Registers a before handler. |
+| [`OnStripeReceivedAfter`](#onstripereceivedafter) | Registers an after handler. |
+| [`OnSubscriptionAddonAttachedBefore`](#onsubscriptionaddonattachedbefore) | Registers a before handler. |
+| [`OnSubscriptionAddonAttachedAfter`](#onsubscriptionaddonattachedafter) | Registers an after handler. |
+| [`OnSubscriptionAddonDetachedBefore`](#onsubscriptionaddondetachedbefore) | Registers a before handler. |
+| [`OnSubscriptionAddonDetachedAfter`](#onsubscriptionaddondetachedafter) | Registers an after handler. |
+| [`OnUsageReportedBefore`](#onusagereportedbefore) | Registers a before handler. |
+| [`OnUsageReportedAfter`](#onusagereportedafter) | Registers an after handler. |
+| [`OnCreditConsumedBefore`](#oncreditconsumedbefore) | Registers a before handler. |
+| [`OnCreditConsumedAfter`](#oncreditconsumedafter) | Registers an after handler. |
+| [`OnCreditGrantedBefore`](#oncreditgrantedbefore) | Registers a before handler. |
+| [`OnCreditGrantedAfter`](#oncreditgrantedafter) | Registers an after handler. |
+| [`OnCreditAdjustedBefore`](#oncreditadjustedbefore) | Registers a before handler. |
+| [`OnCreditAdjustedAfter`](#oncreditadjustedafter) | Registers an after handler. |
+| [`HasListeners`](#haslisteners) | Checks registrations for diagnostics. |
+| [`EmitCustomerBeforeAsync`](#emitcustomerbeforeasync) | Dispatch helper for custom integrations. |
+| [`EmitCustomerAfterAsync`](#emitcustomerafterasync) | Dispatch helper for custom integrations. |
+| [`EmitSubscriptionBeforeAsync`](#emitsubscriptionbeforeasync) | Dispatch helper for custom integrations. |
+| [`EmitSubscriptionAfterAsync`](#emitsubscriptionafterasync) | Dispatch helper for custom integrations. |
+| [`EmitStripeReceivedAsync`](#emitstripereceivedasync) | Dispatch helper for custom integrations. |
+
+</div>
+
+## Method details
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### on { #on }
+
+Register one handler for an event. Registering the same function for the same event twice keeps one registration. .NET uses the event-specific methods shown in its language view.
+
+<div class="signature" markdown="1">
+
+```typescript
+on<E extends HookEventName>(event: E, handler: HookHandler<E>): () => void
+```
+
+</div>
+
+**Parameters**
+
+- `event`: [HookEventName](#HookEventName).
+- `handler`: [HookHandler](#HookHandler) receiving the event-specific payload.
+
+**Returns** `() => void`: Call this function to unsubscribe.
+
+**Example**
+
+```typescript
+import { HookEvents } from 'subscrio';
+
+const unsubscribe = subscrio.hooks.on(HookEvents.CustomerCreatedAfter, event => {
+  console.log(event.new?.key);
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### off { #off }
+
+Remove a previously registered function. Unknown registrations are ignored. .NET uses the Action returned by its registration method.
+
+<div class="signature" markdown="1">
+
+```typescript
+off<E extends HookEventName>(event: E, handler: HookHandler<E>): void
+```
+
+</div>
+
+**Parameters**
+
+- `event`: Registered [event name](#HookEventName).
+- `handler`: The same function reference originally registered.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+import { HookEvents, type HookHandler } from 'subscrio';
+
+const handler: HookHandler<typeof HookEvents.CustomerCreatedAfter> = event => {
+  console.log(event.new?.key);
+};
+subscrio.hooks.on(HookEvents.CustomerCreatedAfter, handler);
+subscrio.hooks.off(HookEvents.CustomerCreatedAfter, handler);
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerCreatedBefore { #oncustomercreatedbefore }
+
+Register a handler before `customer.created`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerCreatedBefore(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerCreatedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerCreatedAfter { #oncustomercreatedafter }
+
+Register a handler after `customer.created`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerCreatedAfter(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerCreatedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerUpdatedBefore { #oncustomerupdatedbefore }
+
+Register a handler before `customer.updated`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerUpdatedBefore(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerUpdatedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerUpdatedAfter { #oncustomerupdatedafter }
+
+Register a handler after `customer.updated`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerUpdatedAfter(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerUpdatedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerArchivedBefore { #oncustomerarchivedbefore }
+
+Register a handler before `customer.archived`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerArchivedBefore(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerArchivedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerArchivedAfter { #oncustomerarchivedafter }
+
+Register a handler after `customer.archived`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerArchivedAfter(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerArchivedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerUnarchivedBefore { #oncustomerunarchivedbefore }
+
+Register a handler before `customer.unarchived`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerUnarchivedBefore(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerUnarchivedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerUnarchivedAfter { #oncustomerunarchivedafter }
+
+Register a handler after `customer.unarchived`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerUnarchivedAfter(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerUnarchivedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerDeletedBefore { #oncustomerdeletedbefore }
+
+Register a handler before `customer.deleted`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerDeletedBefore(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerDeletedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCustomerDeletedAfter { #oncustomerdeletedafter }
+
+Register a handler after `customer.deleted`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCustomerDeletedAfter(CustomerHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [CustomerHookHandler](#CustomerHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerDeletedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionCreatedBefore { #onsubscriptioncreatedbefore }
+
+Register a handler before `subscription.created`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionCreatedBefore(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionCreatedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionCreatedAfter { #onsubscriptioncreatedafter }
+
+Register a handler after `subscription.created`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionCreatedAfter(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionCreatedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionUpdatedBefore { #onsubscriptionupdatedbefore }
+
+Register a handler before `subscription.updated`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionUpdatedBefore(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionUpdatedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionUpdatedAfter { #onsubscriptionupdatedafter }
+
+Register a handler after `subscription.updated`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionUpdatedAfter(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionUpdatedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionArchivedBefore { #onsubscriptionarchivedbefore }
+
+Register a handler before `subscription.archived`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionArchivedBefore(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionArchivedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionArchivedAfter { #onsubscriptionarchivedafter }
+
+Register a handler after `subscription.archived`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionArchivedAfter(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionArchivedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionUnarchivedBefore { #onsubscriptionunarchivedbefore }
+
+Register a handler before `subscription.unarchived`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionUnarchivedBefore(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionUnarchivedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionUnarchivedAfter { #onsubscriptionunarchivedafter }
+
+Register a handler after `subscription.unarchived`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionUnarchivedAfter(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionUnarchivedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionDeletedBefore { #onsubscriptiondeletedbefore }
+
+Register a handler before `subscription.deleted`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionDeletedBefore(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionDeletedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionDeletedAfter { #onsubscriptiondeletedafter }
+
+Register a handler after `subscription.deleted`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionDeletedAfter(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionDeletedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionFeatureOverrideAddedBefore { #onsubscriptionfeatureoverrideaddedbefore }
+
+Register a handler before `subscription.featureOverrideAdded`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionFeatureOverrideAddedBefore(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionFeatureOverrideAddedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionFeatureOverrideAddedAfter { #onsubscriptionfeatureoverrideaddedafter }
+
+Register a handler after `subscription.featureOverrideAdded`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionFeatureOverrideAddedAfter(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionFeatureOverrideAddedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionFeatureOverrideRemovedBefore { #onsubscriptionfeatureoverrideremovedbefore }
+
+Register a handler before `subscription.featureOverrideRemoved`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionFeatureOverrideRemovedBefore(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionFeatureOverrideRemovedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionFeatureOverrideRemovedAfter { #onsubscriptionfeatureoverrideremovedafter }
+
+Register a handler after `subscription.featureOverrideRemoved`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionFeatureOverrideRemovedAfter(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionFeatureOverrideRemovedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionTemporaryOverridesClearedBefore { #onsubscriptiontemporaryoverridesclearedbefore }
+
+Register a handler before `subscription.temporaryOverridesCleared`. A thrown error prevents the pending mutation.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionTemporaryOverridesClearedBefore(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionTemporaryOverridesClearedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionTemporaryOverridesClearedAfter { #onsubscriptiontemporaryoverridesclearedafter }
+
+Register a handler after `subscription.temporaryOverridesCleared`. A thrown error propagates after the change has been saved.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionTemporaryOverridesClearedAfter(SubscriptionHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [SubscriptionHookHandler](#SubscriptionHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionTemporaryOverridesClearedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnStripeReceivedBefore { #onstripereceivedbefore }
+
+Register a handler before Stripe event processing. Throwing stops processing; changing the snapshot does not rewrite the incoming event.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnStripeReceivedBefore(StripeReceivedHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [StripeReceivedHookHandler](#StripeReceivedHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnStripeReceivedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnStripeReceivedAfter { #onstripereceivedafter }
+
+Register a handler after Stripe event processing. The handler runs after successful processing, including ignored event types.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnStripeReceivedAfter(StripeReceivedHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [StripeReceivedHookHandler](#StripeReceivedHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnStripeReceivedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionAddonAttachedBefore { #onsubscriptionaddonattachedbefore }
+
+Register a handler before `subscription.addonAttached`. A thrown error prevents the pending mutation. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionAddonAttachedBefore(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionAddonAttachedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionAddonAttachedAfter { #onsubscriptionaddonattachedafter }
+
+Register a handler after `subscription.addonAttached`. A thrown error propagates after the change has been saved. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionAddonAttachedAfter(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionAddonAttachedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionAddonDetachedBefore { #onsubscriptionaddondetachedbefore }
+
+Register a handler before `subscription.addonDetached`. A thrown error prevents the pending mutation. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionAddonDetachedBefore(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionAddonDetachedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnSubscriptionAddonDetachedAfter { #onsubscriptionaddondetachedafter }
+
+Register a handler after `subscription.addonDetached`. A thrown error propagates after the change has been saved. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnSubscriptionAddonDetachedAfter(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnSubscriptionAddonDetachedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnUsageReportedBefore { #onusagereportedbefore }
+
+Register a handler before `usage.reported`. A thrown error prevents the pending mutation. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnUsageReportedBefore(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnUsageReportedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnUsageReportedAfter { #onusagereportedafter }
+
+Register a handler after `usage.reported`. A thrown error propagates after the change has been saved. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnUsageReportedAfter(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnUsageReportedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCreditConsumedBefore { #oncreditconsumedbefore }
+
+Register a handler before `credit.consumed`. A thrown error prevents the pending mutation. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCreditConsumedBefore(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCreditConsumedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCreditConsumedAfter { #oncreditconsumedafter }
+
+Register a handler after `credit.consumed`. A thrown error propagates after the change has been saved. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCreditConsumedAfter(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCreditConsumedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCreditGrantedBefore { #oncreditgrantedbefore }
+
+Register a handler before `credit.granted`. A thrown error prevents the pending mutation. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCreditGrantedBefore(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCreditGrantedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCreditGrantedAfter { #oncreditgrantedafter }
+
+Register a handler after `credit.granted`. A thrown error propagates after the change has been saved. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCreditGrantedAfter(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCreditGrantedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCreditAdjustedBefore { #oncreditadjustedbefore }
+
+Register a handler before `credit.adjusted`. A thrown error prevents the pending mutation. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCreditAdjustedBefore(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCreditAdjustedBefore((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### OnCreditAdjustedAfter { #oncreditadjustedafter }
+
+Register a handler after `credit.adjusted`. A thrown error propagates after the change has been saved. See the [accounting payload](#AccountingMutationHookEvent) for allowed changes and commit-error handling.
+
+<div class="signature" markdown="1">
+
+```csharp
+Action OnCreditAdjustedAfter(AccountingHookHandler handler)
+```
+
+</div>
+
+**Parameters**
+
+- `handler`: [AccountingHookHandler](#AccountingHookHandler) delegate. Registering twice adds two invocations.
+
+**Returns** `Action`: Invoke it to remove this registration.
+
+**Example**
+
+```csharp
+var unsubscribe = subscrio.Hooks.OnCreditAdjustedAfter((evt, cancellationToken) =>
+{
+    Console.WriteLine(evt.Type);
+    return Task.CompletedTask;
+});
+unsubscribe();
+```
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### hasListeners { #haslisteners data-method-ts="hasListeners" data-method-net="HasListeners" }
+
+Check whether an event has registered handlers. This diagnostic does not invoke them.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+hasListeners(event: HookEventName): boolean
+```
+
+</div>
+
+**Parameters**
+
+- `event`: [HookEventName](#HookEventName).
+
+**Returns** `boolean`: Whether at least one handler is registered.
+
+**Example**
+
+```typescript
+import { HookEvents } from 'subscrio';
+
+console.log(subscrio.hooks.hasListeners(HookEvents.CustomerCreatedAfter));
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+bool HasListeners(string eventName)
+```
+
+</div>
+
+**Parameters**
+
+- `eventName`: Event string from [HookEvents](#HookEventName).
+
+**Returns** `bool`: Whether at least one handler is registered.
+
+**Example**
+
+```csharp
+Console.WriteLine(subscrio.Hooks.HasListeners(HookEvents.CustomerCreatedAfter));
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### emit { #emit }
+
+Dispatch a payload to the registered handlers without saving an entity. This helper is for custom integrations; normal library methods emit their own events. Handler errors propagate.
+
+<div class="signature" markdown="1">
+
+```typescript
+emit<E extends HookEventName>(event: E, payload: HookEventMap[E]): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `event`: [HookEventName](#HookEventName).
+- `payload`: Corresponding [HookEventMap](#HookEventMap) payload.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+import { HookEvents } from 'subscrio';
+
+await subscrio.hooks.emit(HookEvents.CustomerDeletedAfter, {
+  type: HookEvents.CustomerDeletedAfter, phase: 'after', source: 'system',
+  occurredAt: new Date().toISOString(), entityId: null, old: null, new: null
+});
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### EmitCustomerBeforeAsync { #emitcustomerbeforeasync }
+
+Dispatch a payload for a custom integration without saving a database record. Handler exceptions propagate. Ordinary library operations call the dispatcher themselves.
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<CustomerDto?> EmitCustomerBeforeAsync(string eventName, HookSource source, long? entityId, CustomerDto? oldDto, CustomerDto? newDto, CancellationToken cancellationToken)
+```
+
+</div>
+
+**Parameters**
+
+- `eventName`: Matching [event name](#HookEventName).
+- `source`: [HookSource](#HookSource) identifying the initiator.
+- `entityId`: Database entity ID, or null before creation.
+- `oldDto`, `newDto`: Previous and proposed or saved [CustomerDto](customers.md#CustomerDto) snapshots. Null old means creation; null new means deletion.
+- `cancellationToken`: Optional cancellation token; defaults to default.
+
+**Returns** [CustomerDto](customers.md#CustomerDto)`?`: Proposed customer after handlers; unchanged when no listeners exist.
+
+**Example**
+
+```csharp
+await subscrio.Hooks.EmitCustomerBeforeAsync(
+    HookEvents.CustomerCreatedBefore, HookSource.System, null, null, new CustomerDto { Key = "example" });
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### EmitCustomerAfterAsync { #emitcustomerafterasync }
+
+Dispatch a payload for a custom integration without saving a database record. Handler exceptions propagate. Ordinary library operations call the dispatcher themselves.
+
+<div class="signature" markdown="1">
+
+```csharp
+Task EmitCustomerAfterAsync(string eventName, HookSource source, long? entityId, CustomerDto? oldDto, CustomerDto? newDto, CancellationToken cancellationToken)
+```
+
+</div>
+
+**Parameters**
+
+- `eventName`: Matching [event name](#HookEventName).
+- `source`: [HookSource](#HookSource) identifying the initiator.
+- `entityId`: Database entity ID, or null before creation.
+- `oldDto`, `newDto`: Previous and proposed or saved [CustomerDto](customers.md#CustomerDto) snapshots. Null old means creation; null new means deletion.
+- `cancellationToken`: Optional cancellation token; defaults to default.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Hooks.EmitCustomerAfterAsync(
+    HookEvents.CustomerCreatedAfter, HookSource.System, null, null, new CustomerDto { Key = "example" });
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### EmitSubscriptionBeforeAsync { #emitsubscriptionbeforeasync }
+
+Dispatch a payload for a custom integration without saving a database record. Handler exceptions propagate. Ordinary library operations call the dispatcher themselves.
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<SubscriptionMutationHookEvent?> EmitSubscriptionBeforeAsync(string eventName, HookSource source, long? entityId, long? customerId, SubscriptionDto? oldDto, SubscriptionDto? newDto, string? featureKey, string? value, string? overrideType, CancellationToken cancellationToken, DateTime? expiresAt)
+```
+
+</div>
+
+**Parameters**
+
+- `eventName`: Matching [event name](#HookEventName).
+- `source`: [HookSource](#HookSource) identifying the initiator.
+- `entityId`: Database entity ID, or null before creation.
+- `customerId`: Database customer ID, or null when unavailable.
+- `oldDto`, `newDto`: Previous and proposed or saved [SubscriptionDto](subscriptions.md#SubscriptionDto) snapshots. Null old means creation; null new means deletion.
+- `featureKey`, `value`, `overrideType`: Optional override context; defaults to null.
+- `expiresAt`: Optional timed-override expiry; defaults to null.
+- `cancellationToken`: Optional cancellation token; defaults to default.
+
+**Returns** [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent)`?`: Mutable payload, or null when no listeners exist.
+
+**Example**
+
+```csharp
+await subscrio.Hooks.EmitSubscriptionBeforeAsync(
+    HookEvents.SubscriptionCreatedBefore, HookSource.System, null, null, null, new SubscriptionDto { Key = "example" });
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### EmitSubscriptionAfterAsync { #emitsubscriptionafterasync }
+
+Dispatch a payload for a custom integration without saving a database record. Handler exceptions propagate. Ordinary library operations call the dispatcher themselves.
+
+<div class="signature" markdown="1">
+
+```csharp
+Task EmitSubscriptionAfterAsync(string eventName, HookSource source, long? entityId, long? customerId, SubscriptionDto? oldDto, SubscriptionDto? newDto, string? featureKey, string? value, string? overrideType, CancellationToken cancellationToken, DateTime? expiresAt)
+```
+
+</div>
+
+**Parameters**
+
+- `eventName`: Matching [event name](#HookEventName).
+- `source`: [HookSource](#HookSource) identifying the initiator.
+- `entityId`: Database entity ID, or null before creation.
+- `customerId`: Database customer ID, or null when unavailable.
+- `oldDto`, `newDto`: Previous and proposed or saved [SubscriptionDto](subscriptions.md#SubscriptionDto) snapshots. Null old means creation; null new means deletion.
+- `featureKey`, `value`, `overrideType`: Optional override context; defaults to null.
+- `expiresAt`: Optional timed-override expiry; defaults to null.
+- `cancellationToken`: Optional cancellation token; defaults to default.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Hooks.EmitSubscriptionAfterAsync(
+    HookEvents.SubscriptionCreatedAfter, HookSource.System, null, null, null, new SubscriptionDto { Key = "example" });
+```
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="method-entry" markdown="1">
+
+### EmitStripeReceivedAsync { #emitstripereceivedasync }
+
+Dispatch a payload for a custom integration without saving a database record. Handler exceptions propagate. Ordinary library operations call the dispatcher themselves.
+
+<div class="signature" markdown="1">
+
+```csharp
+Task EmitStripeReceivedAsync(string eventName, HookPhase phase, Stripe.Event stripeEvent, CancellationToken cancellationToken)
+```
+
+</div>
+
+**Parameters**
+
+- `eventName`: Matching [event name](#HookEventName).
+- `phase`: Before or After from [HookPhase](#HookPhase).
+- `stripeEvent`: Parsed Stripe event to snapshot.
+- `cancellationToken`: Optional cancellation token; defaults to default.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+var stripeEvent = new Stripe.Event { Id = "evt_example", Type = "customer.updated" };
+await subscrio.Hooks.EmitStripeReceivedAsync(
+    HookEvents.StripeReceivedBefore, HookPhase.Before, stripeEvent);
+```
+
+</div>
+
+</div>
+
+## Data types
+
+Hook payloads are snapshots. Editing an after payload does not persist changes. Before handlers must use the fields supported by their event; relationship keys do not remap customer, plan, or billing-cycle relationships.
+
+<div class="data-type" markdown="1">
+
+### HooksConfig { #HooksConfig data-method-ts="HooksConfig" data-method-net="SubscrioHooksOptions" }
+
+Optional construction-time registration. Each field defaults to no handler. Runtime registration is also supported.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `before` | `*.before` | After the proposed DTO is built, **before** the database write | Yes (applied to the entity before persist) | Yes — mutation does not run |
-| `after` | `*.after` | **After** a successful database write | No — `new` is an immutable clone of the persisted DTO | No — row already committed; API still throws |
+| Each [event name](#HookEventName) | <code><a href="#HookHandler">HookHandler</a>&lt;E&gt; \| <a href="#HookHandler">HookHandler</a>&lt;E&gt;[]</code> | No | None | One handler or ordered list for that event. |
 
-- Handlers are awaited sequentially. The first throw stops remaining handlers for that emit.
-- Payload data is loaded/built **only when at least one listener is registered** for that event. Multiple handlers share one payload (built once).
-- Each domain event includes `source`: `api` | `stripe` | `system`.
-- Each domain event includes `phase`: `before` | `after`.
+</div>
+<div class="language-content" data-lang="net" markdown="1">
 
-## Mutation Rules (`before` only)
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `OnCustomerCreatedBefore` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.created.before`. |
+| `OnCustomerCreatedAfter` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.created.after`. |
+| `OnCustomerUpdatedBefore` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.updated.before`. |
+| `OnCustomerUpdatedAfter` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.updated.after`. |
+| `OnCustomerArchivedBefore` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.archived.before`. |
+| `OnCustomerArchivedAfter` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.archived.after`. |
+| `OnCustomerUnarchivedBefore` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.unarchived.before`. |
+| `OnCustomerUnarchivedAfter` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.unarchived.after`. |
+| `OnCustomerDeletedBefore` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.deleted.before`. |
+| `OnCustomerDeletedAfter` | <code><a href="#CustomerHookHandler">CustomerHookHandler</a>?</code> | No | null | Handler for `customer.deleted.after`. |
+| `OnSubscriptionCreatedBefore` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.created.before`. |
+| `OnSubscriptionCreatedAfter` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.created.after`. |
+| `OnSubscriptionUpdatedBefore` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.updated.before`. |
+| `OnSubscriptionUpdatedAfter` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.updated.after`. |
+| `OnSubscriptionArchivedBefore` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.archived.before`. |
+| `OnSubscriptionArchivedAfter` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.archived.after`. |
+| `OnSubscriptionUnarchivedBefore` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.unarchived.before`. |
+| `OnSubscriptionUnarchivedAfter` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.unarchived.after`. |
+| `OnSubscriptionDeletedBefore` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.deleted.before`. |
+| `OnSubscriptionDeletedAfter` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.deleted.after`. |
+| `OnSubscriptionFeatureOverrideAddedBefore` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.featureOverrideAdded.before`. |
+| `OnSubscriptionFeatureOverrideAddedAfter` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.featureOverrideAdded.after`. |
+| `OnSubscriptionFeatureOverrideRemovedBefore` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.featureOverrideRemoved.before`. |
+| `OnSubscriptionFeatureOverrideRemovedAfter` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.featureOverrideRemoved.after`. |
+| `OnSubscriptionTemporaryOverridesClearedBefore` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.temporaryOverridesCleared.before`. |
+| `OnSubscriptionTemporaryOverridesClearedAfter` | <code><a href="#SubscriptionHookHandler">SubscriptionHookHandler</a>?</code> | No | null | Handler for `subscription.temporaryOverridesCleared.after`. |
+| `OnStripeReceivedBefore` | <code><a href="#StripeReceivedHookHandler">StripeReceivedHookHandler</a>?</code> | No | null | Handler for `stripe.received.before`. |
+| `OnStripeReceivedAfter` | <code><a href="#StripeReceivedHookHandler">StripeReceivedHookHandler</a>?</code> | No | null | Handler for `stripe.received.after`. |
+| `OnSubscriptionAddonAttachedBefore` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `subscription.addonAttached.before`. |
+| `OnSubscriptionAddonAttachedAfter` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `subscription.addonAttached.after`. |
+| `OnSubscriptionAddonDetachedBefore` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `subscription.addonDetached.before`. |
+| `OnSubscriptionAddonDetachedAfter` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `subscription.addonDetached.after`. |
+| `OnUsageReportedBefore` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `usage.reported.before`. |
+| `OnUsageReportedAfter` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `usage.reported.after`. |
+| `OnCreditConsumedBefore` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `credit.consumed.before`. |
+| `OnCreditConsumedAfter` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `credit.consumed.after`. |
+| `OnCreditGrantedBefore` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `credit.granted.before`. |
+| `OnCreditGrantedAfter` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `credit.granted.after`. |
+| `OnCreditAdjustedBefore` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `credit.adjusted.before`. |
+| `OnCreditAdjustedAfter` | <code><a href="#AccountingHookHandler">AccountingHookHandler</a>?</code> | No | null | Handler for `credit.adjusted.after`. |
 
-- Handlers may mutate fields on `evt.new` (or `evt.New` in .NET).
-- Subscrio applies those fields onto the domain entity before persist.
-- Identity fields:
-  - On **create**, changing `key` via a before-hook is allowed (conflict checks re-run).
-  - On **update**, changing `key` via a before-hook is rejected.
-- Status transitions for archive/unarchive are still driven by the service (entity methods), not by free-form status edits alone.
-- `after` payloads clone DTOs; mutations to `new` are not applied.
+</div>
+</div>
 
-## `entityId` and `customerId`
+<div class="data-type" markdown="1">
 
-| Field | Meaning |
+### HookEventName { #HookEventName }
+
+Supported event constants and payloads. TypeScript uses their string-value union; .NET uses the same strings through HookEvents.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Value | Meaning |
 | --- | --- |
-| `entityId` | Numeric primary key of the customer or subscription when known. |
-| `customerId` | On subscription events only: numeric customer PK when known. |
+| `HookEvents.SubscriptionAddonAttachedBefore` | `subscription.addonAttached.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.SubscriptionAddonAttachedAfter` | `subscription.addonAttached.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.SubscriptionAddonDetachedBefore` | `subscription.addonDetached.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.SubscriptionAddonDetachedAfter` | `subscription.addonDetached.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.UsageReportedBefore` | `usage.reported.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.UsageReportedAfter` | `usage.reported.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditConsumedBefore` | `credit.consumed.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditConsumedAfter` | `credit.consumed.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditGrantedBefore` | `credit.granted.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditGrantedAfter` | `credit.granted.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditAdjustedBefore` | `credit.adjusted.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditAdjustedAfter` | `credit.adjusted.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CustomerCreatedBefore` | `customer.created.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerCreatedAfter` | `customer.created.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerUpdatedBefore` | `customer.updated.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerUpdatedAfter` | `customer.updated.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerArchivedBefore` | `customer.archived.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerArchivedAfter` | `customer.archived.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerUnarchivedBefore` | `customer.unarchived.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerUnarchivedAfter` | `customer.unarchived.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerDeletedBefore` | `customer.deleted.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerDeletedAfter` | `customer.deleted.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.SubscriptionCreatedBefore` | `subscription.created.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionCreatedAfter` | `subscription.created.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionUpdatedBefore` | `subscription.updated.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionUpdatedAfter` | `subscription.updated.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionArchivedBefore` | `subscription.archived.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionArchivedAfter` | `subscription.archived.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionUnarchivedBefore` | `subscription.unarchived.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionUnarchivedAfter` | `subscription.unarchived.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionDeletedBefore` | `subscription.deleted.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionDeletedAfter` | `subscription.deleted.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionFeatureOverrideAddedBefore` | `subscription.featureOverrideAdded.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionFeatureOverrideAddedAfter` | `subscription.featureOverrideAdded.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionFeatureOverrideRemovedBefore` | `subscription.featureOverrideRemoved.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionFeatureOverrideRemovedAfter` | `subscription.featureOverrideRemoved.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionTemporaryOverridesClearedBefore` | `subscription.temporaryOverridesCleared.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionTemporaryOverridesClearedAfter` | `subscription.temporaryOverridesCleared.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.StripeReceivedBefore` | `stripe.received.before`; [StripeReceivedHookEvent](#StripeReceivedHookEvent). |
+| `HookEvents.StripeReceivedAfter` | `stripe.received.after`; [StripeReceivedHookEvent](#StripeReceivedHookEvent). |
 
-Typical values:
+</div>
+<div class="language-content" data-lang="net" markdown="1">
 
-- `*.created.before`: `entityId` is `null` (row not inserted yet).
-- `*.created.after`: `entityId` is set to the new PK.
-- Update / archive / delete before and after: `entityId` is set when the row already exists.
-
-## Throw Semantics
-
-| Hook | Effect of throw |
+| Value | Meaning |
 | --- | --- |
-| `*.before` | Operation aborted. Nothing is written for that mutation. |
-| `*.after` | Database write has already committed. The public API call still rejects/throws. Callers must treat the row as persisted. |
-| `stripe.received.before` | `processStripeEvent` aborts before handling the Stripe payload. |
-| `stripe.received.after` | Stripe handling already finished. The API call still throws. |
+| `HookEvents.SubscriptionAddonAttachedBefore` | `subscription.addonAttached.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.SubscriptionAddonAttachedAfter` | `subscription.addonAttached.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.SubscriptionAddonDetachedBefore` | `subscription.addonDetached.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.SubscriptionAddonDetachedAfter` | `subscription.addonDetached.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.UsageReportedBefore` | `usage.reported.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.UsageReportedAfter` | `usage.reported.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditConsumedBefore` | `credit.consumed.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditConsumedAfter` | `credit.consumed.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditGrantedBefore` | `credit.granted.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditGrantedAfter` | `credit.granted.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditAdjustedBefore` | `credit.adjusted.before`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CreditAdjustedAfter` | `credit.adjusted.after`; [AccountingMutationHookEvent](#AccountingMutationHookEvent). |
+| `HookEvents.CustomerCreatedBefore` | `customer.created.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerCreatedAfter` | `customer.created.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerUpdatedBefore` | `customer.updated.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerUpdatedAfter` | `customer.updated.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerArchivedBefore` | `customer.archived.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerArchivedAfter` | `customer.archived.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerUnarchivedBefore` | `customer.unarchived.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerUnarchivedAfter` | `customer.unarchived.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerDeletedBefore` | `customer.deleted.before`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.CustomerDeletedAfter` | `customer.deleted.after`; [CustomerMutationHookEvent](#CustomerMutationHookEvent). |
+| `HookEvents.SubscriptionCreatedBefore` | `subscription.created.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionCreatedAfter` | `subscription.created.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionUpdatedBefore` | `subscription.updated.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionUpdatedAfter` | `subscription.updated.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionArchivedBefore` | `subscription.archived.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionArchivedAfter` | `subscription.archived.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionUnarchivedBefore` | `subscription.unarchived.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionUnarchivedAfter` | `subscription.unarchived.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionDeletedBefore` | `subscription.deleted.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionDeletedAfter` | `subscription.deleted.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionFeatureOverrideAddedBefore` | `subscription.featureOverrideAdded.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionFeatureOverrideAddedAfter` | `subscription.featureOverrideAdded.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionFeatureOverrideRemovedBefore` | `subscription.featureOverrideRemoved.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionFeatureOverrideRemovedAfter` | `subscription.featureOverrideRemoved.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionTemporaryOverridesClearedBefore` | `subscription.temporaryOverridesCleared.before`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.SubscriptionTemporaryOverridesClearedAfter` | `subscription.temporaryOverridesCleared.after`; [SubscriptionMutationHookEvent](#SubscriptionMutationHookEvent). |
+| `HookEvents.StripeReceivedBefore` | `stripe.received.before`; [StripeReceivedHookEvent](#StripeReceivedHookEvent). |
+| `HookEvents.StripeReceivedAfter` | `stripe.received.after`; [StripeReceivedHookEvent](#StripeReceivedHookEvent). |
 
-## Event Catalog
+</div>
+</div>
 
-Event names use the pattern `{resource}.{action}.{before\|after}`.
+<div class="data-type" markdown="1">
 
-### Customer
+### HookHandler { #HookHandler }
 
-=== "TypeScript"
-    | Event string | `HookEvents` constant | When | `old` | `new` |
-    | --- | --- | --- | --- | --- |
-    | `customer.created.before` | `CustomerCreatedBefore` | Before insert | `null` | proposed (mutable) |
-    | `customer.created.after` | `CustomerCreatedAfter` | After insert | `null` | persisted |
-    | `customer.updated.before` | `CustomerUpdatedBefore` | Before save | current | proposed (mutable) |
-    | `customer.updated.after` | `CustomerUpdatedAfter` | After save | previous | persisted |
-    | `customer.archived.before` | `CustomerArchivedBefore` | Before archive save | current | proposed |
-    | `customer.archived.after` | `CustomerArchivedAfter` | After archive save | previous | persisted |
-    | `customer.unarchived.before` | `CustomerUnarchivedBefore` | Before unarchive save | current | proposed |
-    | `customer.unarchived.after` | `CustomerUnarchivedAfter` | After unarchive save | previous | persisted |
-    | `customer.deleted.before` | `CustomerDeletedBefore` | Before delete | current | `null` |
-    | `customer.deleted.after` | `CustomerDeletedAfter` | After delete | previous | `null` |
+TypeScript handler: <code>(event: <a href="#HookEventMap">HookEventMap</a>[E]) =&gt; void | Promise&lt;void&gt;</code>. `E` extends [HookEventName](#HookEventName). The library awaits asynchronous handlers. .NET uses the named delegates below.
 
-=== ".NET"
-    | Event string | `HookEvents` constant | Register with | When | `Old` | `New` |
-    | --- | --- | --- | --- | --- | --- |
-    | `customer.created.before` | `CustomerCreatedBefore` | `OnCustomerCreatedBefore` | Before insert | `null` | proposed (mutable) |
-    | `customer.created.after` | `CustomerCreatedAfter` | `OnCustomerCreatedAfter` | After insert | `null` | persisted |
-    | `customer.updated.before` | `CustomerUpdatedBefore` | `OnCustomerUpdatedBefore` | Before save | current | proposed (mutable) |
-    | `customer.updated.after` | `CustomerUpdatedAfter` | `OnCustomerUpdatedAfter` | After save | previous | persisted |
-    | `customer.archived.before` | `CustomerArchivedBefore` | `OnCustomerArchivedBefore` | Before archive | current | proposed |
-    | `customer.archived.after` | `CustomerArchivedAfter` | `OnCustomerArchivedAfter` | After archive | previous | persisted |
-    | `customer.unarchived.before` | `CustomerUnarchivedBefore` | `OnCustomerUnarchivedBefore` | Before unarchive | current | proposed |
-    | `customer.unarchived.after` | `CustomerUnarchivedAfter` | `OnCustomerUnarchivedAfter` | After unarchive | previous | persisted |
-    | `customer.deleted.before` | `CustomerDeletedBefore` | `OnCustomerDeletedBefore` | Before delete | current | `null` |
-    | `customer.deleted.after` | `CustomerDeletedAfter` | `OnCustomerDeletedAfter` | After delete | previous | `null` |
+</div>
 
-### Subscription
+<div class="data-type" markdown="1">
 
-=== "TypeScript"
-    | Event string | `HookEvents` constant | When | `old` | `new` |
-    | --- | --- | --- | --- | --- |
-    | `subscription.created.before` / `.after` | `SubscriptionCreatedBefore` / `After` | Before/after insert | `null` | proposed / persisted |
-    | `subscription.updated.before` / `.after` | `SubscriptionUpdatedBefore` / `After` | Before/after save | current / previous | proposed / persisted |
-    | `subscription.archived.before` / `.after` | `SubscriptionArchivedBefore` / `After` | Before/after archive | current / previous | proposed / persisted |
-    | `subscription.unarchived.before` / `.after` | `SubscriptionUnarchivedBefore` / `After` | Before/after unarchive | current / previous | proposed / persisted |
-    | `subscription.deleted.before` / `.after` | `SubscriptionDeletedBefore` / `After` | Before/after delete | current / previous | `null` |
-    | `subscription.featureOverrideAdded.before` / `.after` | `SubscriptionFeatureOverrideAddedBefore` / `After` | Before/after override save | (+ `featureKey`, `value`, `overrideType`) | |
-    | `subscription.featureOverrideRemoved.before` / `.after` | `SubscriptionFeatureOverrideRemovedBefore` / `After` | Before/after override remove | (+ `featureKey`) | |
-    | `subscription.temporaryOverridesCleared.before` / `.after` | `SubscriptionTemporaryOverridesClearedBefore` / `After` | Before/after clear | | |
+### CustomerHookHandler { #CustomerHookHandler }
 
-    `transitionExpiredSubscriptions()` emits normal per-row before/after events with `source: 'system'`.
+The .NET delegate receives <code><a href="#CustomerMutationHookEvent">CustomerMutationHookEvent</a></code> and `CancellationToken`, and returns `Task`. TypeScript uses [HookHandler](#HookHandler) with the corresponding event.
 
-=== ".NET"
-    | Event string | Register with | When |
-    | --- | --- | --- |
-    | `subscription.created.before` / `.after` | `OnSubscriptionCreatedBefore` / `After` | Before/after insert |
-    | `subscription.updated.before` / `.after` | `OnSubscriptionUpdatedBefore` / `After` | Before/after save |
-    | `subscription.archived.before` / `.after` | `OnSubscriptionArchivedBefore` / `After` | Before/after archive |
-    | `subscription.unarchived.before` / `.after` | `OnSubscriptionUnarchivedBefore` / `After` | Before/after unarchive |
-    | `subscription.deleted.before` / `.after` | `OnSubscriptionDeletedBefore` / `After` | Before/after delete |
-    | `subscription.featureOverrideAdded.before` / `.after` | `OnSubscriptionFeatureOverrideAddedBefore` / `After` | Before/after override save (+ `FeatureKey`, `Value`, `OverrideType`) |
-    | `subscription.featureOverrideRemoved.before` / `.after` | `OnSubscriptionFeatureOverrideRemovedBefore` / `After` | Before/after override remove (+ `FeatureKey`) |
-    | `subscription.temporaryOverridesCleared.before` / `.after` | `OnSubscriptionTemporaryOverridesClearedBefore` / `After` | Before/after clear |
+</div>
 
-    `TransitionExpiredSubscriptionsAsync()` emits normal per-row before/after events with `Source: "system"`.
+<div class="data-type" markdown="1">
 
-### Stripe Inbound
+### SubscriptionHookHandler { #SubscriptionHookHandler }
 
-=== "TypeScript"
-    | Event string | `HookEvents` constant | When | Payload |
-    | --- | --- | --- | --- |
-    | `stripe.received.before` | `StripeReceivedBefore` | Start of `processStripeEvent`, before domain handling | Full verified Stripe event |
-    | `stripe.received.after` | `StripeReceivedAfter` | End of `processStripeEvent`, after domain handling | Full verified Stripe event |
+The .NET delegate receives <code><a href="#SubscriptionMutationHookEvent">SubscriptionMutationHookEvent</a></code> and `CancellationToken`, and returns `Task`. TypeScript uses [HookHandler](#HookHandler) with the corresponding event.
 
-    Domain customer/subscription hooks for resulting writes still fire between these with `source: 'stripe'`.
+</div>
 
-=== ".NET"
-    | Event string | Register with | When | Payload |
-    | --- | --- | --- | --- |
-    | `stripe.received.before` | `OnStripeReceivedBefore` | Start of `ProcessStripeEventAsync` | Full verified Stripe event |
-    | `stripe.received.after` | `OnStripeReceivedAfter` | End of `ProcessStripeEventAsync` | Full verified Stripe event |
+<div class="data-type" markdown="1">
 
-    Domain customer/subscription hooks for resulting writes still fire between these with `Source: "stripe"`.
+### StripeReceivedHookHandler { #StripeReceivedHookHandler }
 
-## Payload Shape
+The .NET delegate receives <code><a href="#StripeReceivedHookEvent">StripeReceivedHookEvent</a></code> and `CancellationToken`, and returns `Task`. TypeScript uses [HookHandler](#HookHandler) with the corresponding event.
 
-### Domain Mutation Payload
+</div>
 
-=== "TypeScript"
-    ```typescript
-    type HookSource = 'api' | 'stripe' | 'system';
-    type HookPhase = 'before' | 'after';
+<div class="data-type" markdown="1">
 
-    interface EntityMutationHookEvent<T> {
-      type: string;
-      phase: HookPhase;
-      source: HookSource;
-      occurredAt: string; // ISO
-      entityId: number | null;
-      customerId?: number | null; // subscription events
-      old: T | null;
-      /** before: mutable proposed DTO; after: immutable clone of persisted DTO */
-      new: T | null;
-    }
+### AccountingMutationHookEvent { #AccountingMutationHookEvent }
 
-    interface CustomerMutationHookEvent extends EntityMutationHookEvent<CustomerDto> {}
+Payload for add-on attachments, usage, and credit changes.
 
-    interface SubscriptionMutationHookEvent extends EntityMutationHookEvent<SubscriptionDto> {
-      featureKey?: string;
-      value?: string;
-      overrideType?: string;
-    }
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `type` | `string` | Event name (e.g. `customer.updated.before`). |
-    | `phase` | `'before' \| 'after'` | Hook phase. |
-    | `source` | `'api' \| 'stripe' \| 'system'` | Origin of the write. |
-    | `occurredAt` | `string` | ISO timestamp when the hook fired. |
-    | `entityId` | `number \| null` | Numeric PK when known. |
-    | `customerId` | `number \| null` | Subscription events: customer PK when known. |
-    | `old` | `T \| null` | DTO before mutation (`null` on create). |
-    | `new` | `T \| null` | Proposed (before) or persisted (after) DTO (`null` on delete). |
-    | `featureKey` | `string` | Optional; override events only. |
-    | `value` | `string` | Optional; override-added events only. |
-    | `overrideType` | `string` | Optional; override-added events only. |
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `type` | <code><a href="#HookEventName">HookEventName</a></code> | Yes | Not applicable | Event name from HookEvents. |
+| `phase` | <code><a href="#HookPhase">HookPhase</a></code> | Yes | Not applicable | before or after. |
+| `source` | <code><a href="#HookSource">HookSource</a></code> | Yes | Not applicable | api, stripe, or system. |
+| `occurredAt` | <code>string</code> | Yes | Not applicable | UTC event timestamp. |
+| `input` | <code>Record&lt;string, unknown&gt;</code> | Yes | Not applicable | Operation input with camelCase keys in both libraries. |
+| `result` | <code>unknown</code> | No | Not applicable | After-event result; absent before the operation. |
 
-=== ".NET"
-    ```csharp
-    public class CustomerMutationHookEvent
-    {
-        public required string Type { get; init; }
-        public required string Phase { get; init; }   // "before" | "after"
-        public required string Source { get; init; }  // "api" | "stripe" | "system"
-        public required string OccurredAt { get; init; }
-        public long? EntityId { get; init; }
-        public CustomerDto? Old { get; init; }
-        public CustomerDto? New { get; set; } // mutable on before
-    }
+</div>
 
-    public class SubscriptionMutationHookEvent
-    {
-        public required string Type { get; init; }
-        public required string Phase { get; init; }
-        public required string Source { get; init; }
-        public required string OccurredAt { get; init; }
-        public long? EntityId { get; init; }
-        public long? CustomerId { get; init; }
-        public SubscriptionDto? Old { get; init; }
-        public SubscriptionDto? New { get; set; }
-        public string? FeatureKey { get; set; }
-        public string? Value { get; set; }
-        public string? OverrideType { get; set; }
-    }
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `Type` | `string` | Event name (e.g. `customer.updated.before`). |
-    | `Phase` | `string` | `"before"` or `"after"`. |
-    | `Source` | `string` | `"api"`, `"stripe"`, or `"system"`. |
-    | `OccurredAt` | `string` | ISO timestamp when the hook fired. |
-    | `EntityId` | `long?` | Numeric PK when known. |
-    | `CustomerId` | `long?` | Subscription events: customer PK when known. |
-    | `Old` | `T?` | DTO before mutation (`null` on create). |
-    | `New` | `T?` | Proposed (before) or persisted (after) DTO (`null` on delete). |
-    | `FeatureKey` | `string?` | Optional; override events only. |
-    | `Value` | `string?` | Optional; override-added events only. |
-    | `OverrideType` | `string?` | Optional; override-added events only. |
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Type` | <code>string</code> | Yes | Not applicable | Event name from HookEvents. |
+| `Phase` | <code>string</code> | Yes | Not applicable | before or after. |
+| `Source` | <code>string</code> | Yes | Not applicable | api, stripe, or system. |
+| `OccurredAt` | <code>string</code> | Yes | Not applicable | UTC event timestamp. |
+| `Input` | <code>JsonObject</code> | Yes | Not applicable | Operation input with camelCase keys in both libraries. |
+| `Result` | <code>JsonElement?</code> | Yes | Not applicable | After-event result; absent before the operation. |
 
-`T` / DTO types are the public JSON shapes (`CustomerDto` / `SubscriptionDto`), not domain entities.
+</div>
 
-### Stripe Received Payload
+</div>
 
-=== "TypeScript"
-    ```typescript
-    interface StripeReceivedHookEvent {
-      type: 'stripe.received.before' | 'stripe.received.after';
-      phase: 'before' | 'after';
-      occurredAt: string;
-      data: Stripe.Event;
-    }
-    ```
+Allowed before-hook input changes are limited to the following fields; changing other fields raises a validation error.
 
-=== ".NET"
-    ```csharp
-    using Stripe;
-
-    public class StripeReceivedHookEvent
-    {
-        public required string Type { get; init; }
-        public required string Phase { get; init; }
-        public required string OccurredAt { get; init; }
-        public required Event Data { get; init; }
-    }
-    ```
-
-## Registration API
-
-### Method Catalog
-
-=== "TypeScript"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `on(event, handler)` | Register a handler | `() => void` unsubscribe |
-    | `off(event, handler)` | Remove a handler | `void` |
-    | `hasListeners(event)` | Whether any handler is registered | `boolean` |
-
-=== ".NET"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `OnCustomer*Before` / `OnCustomer*After` | Typed customer handlers | `Action` unsubscribe |
-    | `OnSubscription*Before` / `OnSubscription*After` | Typed subscription handlers | `Action` unsubscribe |
-    | `OnStripeReceivedBefore` / `OnStripeReceivedAfter` | Inbound Stripe handlers | `Action` unsubscribe |
-    | `HasListeners(eventName)` | Whether any handler is registered | `bool` |
-
-### Config-Time Registration
-
-=== "TypeScript"
-    ```typescript
-    import { Subscrio, HookEvents } from 'subscrio';
-
-    const subscrio = new Subscrio({
-      database: { connectionString: process.env.DATABASE_URL! },
-      hooks: {
-        [HookEvents.StripeReceivedBefore]: async ({ data }) => {
-          await audit.logInboundStripe(data);
-        },
-        [HookEvents.CustomerUpdatedBefore]: async ({ old, new: next, source }) => {
-          await audit.log('customer.updated.before', { old, new: next, source });
-        },
-        [HookEvents.CustomerCreatedAfter]: async ({ entityId, new: customer }) => {
-          await notify.customerReady(entityId!, customer!);
-        },
-      },
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
-    using Subscrio.Core.Application.Hooks;
-    using Subscrio.Core.Config;
-
-    var subscrio = new Subscrio(new SubscrioConfig
-    {
-        Database = new DatabaseConfig { ConnectionString = conn },
-        Hooks = new SubscrioHooksOptions
-        {
-            OnStripeReceivedBefore = async (evt, ct) =>
-                await audit.LogInboundStripeAsync(evt.Data, ct),
-            OnCustomerUpdatedBefore = async (evt, ct) =>
-                await audit.LogAsync(evt.Type, evt.Old, evt.New, evt.Source, ct),
-            OnCustomerCreatedAfter = async (evt, ct) =>
-                await notify.CustomerReadyAsync(evt.EntityId!.Value, evt.New!, ct),
-        }
-    });
-    ```
-
-### Runtime Registration
-
-=== "TypeScript"
-    ```typescript
-    const off = subscrio.hooks.on(HookEvents.SubscriptionUpdatedBefore, async (evt) => {
-      await audit.logDiff(evt.old, evt.new, evt.source);
-    });
-
-    // later
-    off();
-
-    // or
-    subscrio.hooks.off(HookEvents.SubscriptionUpdatedBefore, handler);
-    ```
-
-=== ".NET"
-    ```csharp
-    var off = subscrio.Hooks.OnSubscriptionUpdatedBefore(async (evt, ct) =>
-    {
-        await audit.LogDiffAsync(evt.Old, evt.New, evt.Source, ct);
-    });
-
-    // later
-    off();
-    ```
-
-### Aborting a Mutation (before only)
-
-=== "TypeScript"
-    ```typescript
-    subscrio.hooks.on(HookEvents.CustomerUpdatedBefore, async ({ new: next }) => {
-      if (next?.email?.endsWith('@blocked.test')) {
-        throw new Error('Blocked customer domain');
-      }
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    subscrio.Hooks.OnCustomerUpdatedBefore(async (evt, ct) =>
-    {
-        if (evt.New?.Email?.EndsWith("@blocked.test") == true)
-        {
-            throw new InvalidOperationException("Blocked customer domain");
-        }
-    });
-    ```
-
-### Mutating Proposed Data (before only)
-
-=== "TypeScript"
-    ```typescript
-    subscrio.hooks.on(HookEvents.CustomerCreatedBefore, async (evt) => {
-      evt.new!.displayName = evt.new!.displayName?.trim() ?? null;
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    subscrio.Hooks.OnCustomerCreatedBefore(async (evt, ct) =>
-    {
-        if (evt.New != null)
-        {
-            evt.New.DisplayName = evt.New.DisplayName?.Trim();
-        }
-    });
-    ```
-
-## Migration from Old Event Names
-
-Older docs and code used unsuffixed names such as `customer.created` and `HookEvents.CustomerCreated`. Those names are removed.
-
-| Old | New (pick phase) |
+| Event | Editable input fields |
 | --- | --- |
-| `customer.created` | `customer.created.before` or `customer.created.after` |
-| `customer.updated` | `customer.updated.before` / `.after` |
-| `customer.archived` | `customer.archived.before` / `.after` |
-| `customer.unarchived` | `customer.unarchived.before` / `.after` |
-| `customer.deleted` | `customer.deleted.before` / `.after` |
-| `subscription.*` | `subscription.*.before` / `.after` |
-| `stripe.received` | `stripe.received.before` / `.after` |
+| subscription.addonAttached | quantity |
+| subscription.addonDetached | None |
+| usage.reported | quantity, metadata |
+| credit.granted | amount, priority, expiresAt, metadata; scheduled grants permit amount, priority, metadata |
+| credit.consumed | units, metadata |
+| credit.adjusted | amount, reason |
 
-TypeScript: replace `HookEvents.CustomerCreated` with `HookEvents.CustomerCreatedBefore` or `CustomerCreatedAfter` (same pattern for every event).
+Accounting after-hook failure raises <code>CommittedOperationHookError</code> in TypeScript or <code>CommittedOperationHookException</code> in .NET. The operation already committed; its `result` / `Result` is available on the error. For idempotent operations, retry the identical request and key to recover the saved result.
 
-.NET: replace `OnCustomerCreated` with `OnCustomerCreatedBefore` or `OnCustomerCreatedAfter` (same pattern for every registration method and `SubscrioHooksOptions` property).
+<div class="data-type" markdown="1">
 
-Guidance:
+### AccountingHookHandler { #AccountingHookHandler }
 
-- Validation, enrichment, and abort → `*.before`
-- Side effects that need a committed row / `entityId` → `*.after`
-- Audit that must not write if the mutation fails → prefer `*.after`, or accept before-hook trade-offs
+The .NET delegate receives <code><a href="#AccountingMutationHookEvent">AccountingMutationHookEvent</a></code> and `CancellationToken`, and returns `Task`. TypeScript uses [HookHandler](#HookHandler) with the corresponding event.
 
-## Coverage
+</div>
 
-Hooks fire from:
+<div class="data-type" markdown="1">
 
-=== "TypeScript"
-    - `subscrio.customers.*` mutations (`source: 'api'`)
-    - `subscrio.subscriptions.*` mutations (`source: 'api'`)
-    - `subscrio.subscriptions.transitionExpiredSubscriptions()` (`source: 'system'`)
-    - `subscrio.stripe.processStripeEvent` (`stripe.received.before` / `.after`) and related writes (`source: 'stripe'`)
+### HookEventMap { #HookEventMap }
 
-=== ".NET"
-    - `subscrio.Customers.*` mutations (`Source: "api"`)
-    - `subscrio.Subscriptions.*` mutations (`Source: "api"`)
-    - `subscrio.Subscriptions.TransitionExpiredSubscriptionsAsync()` (`Source: "system"`)
-    - `subscrio.Stripe.ProcessStripeEventAsync` (`stripe.received.before` / `.after`) and related writes (`Source: "stripe"`)
+TypeScript maps each event name to the payload shown in [HookEventName](#HookEventName). .NET registration delegates select the corresponding payload type.
 
-## Related Workflows
+</div>
 
-- Customer and subscription public APIs emit domain hooks around each write. See [Customers](./customers.md) and [Subscriptions](./subscriptions.md).
-- Stripe inbound processing emits `stripe.received.before`, domain hooks with `source: stripe`, then `stripe.received.after`. See [Stripe Integration](./stripe-integration.md).
-- Packaging reusable handlers (audit log, etc.): [How to Extend](./how-to-extend.md).
+<div class="data-type" markdown="1">
+
+### HookSource { #HookSource }
+
+Event origin.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Value | Meaning |
+| --- | --- |
+| `api` | A public API mutation; accounting hooks currently use this source for scheduled issuance too. |
+| `stripe` | A Stripe-driven entity mutation. |
+| `system` | A system lifecycle transition. |
+
+</div>
+<div class="language-content" data-lang="net" markdown="1">
+
+| Value | Meaning |
+| --- | --- |
+| `HookSource.Api` | A public API mutation; accounting hooks currently use this source for scheduled issuance too. |
+| `HookSource.Stripe` | A Stripe-driven entity mutation. |
+| `HookSource.System` | A system lifecycle transition. |
+
+</div>
+</div>
+
+<div class="data-type" markdown="1">
+
+### SubscriptionMutationHookEvent { #SubscriptionMutationHookEvent }
+
+Payload for subscription changes.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `type` | <code><a href="#HookEventName">HookEventName</a></code> | Yes | Not applicable | Event name from HookEvents. |
+| `phase` | <code><a href="#HookPhase">HookPhase</a></code> | Yes | Not applicable | before or after. |
+| `source` | <code><a href="#HookSource">HookSource</a></code> | Yes | Not applicable | api, stripe, or system. |
+| `occurredAt` | <code>string</code> | Yes | Not applicable | UTC event timestamp. |
+| `entityId` | <code>number \| null</code> | Yes | Not applicable | Numeric database ID: null before creation, known after creation and on existing records. |
+| `customerId` | <code>number \| null \| undefined</code> | No | Not applicable | Owning customer database ID when available. |
+| `old` | <code><a href="../subscriptions/#SubscriptionDto">SubscriptionDto</a> \| null</code> | Yes | Not applicable | Previous snapshot; null for creation. |
+| `new` | <code><a href="../subscriptions/#SubscriptionDto">SubscriptionDto</a> \| null</code> | Yes | Not applicable | Proposed before snapshot or saved after snapshot; null for deletion. |
+| `featureKey` | <code>string \| undefined</code> | No | Not applicable | Feature involved in an override event. |
+| `value` | <code>string \| undefined</code> | No | Not applicable | Proposed override value. |
+| `overrideType` | <code>string \| undefined</code> | No | Not applicable | permanent, temporary, or timed. |
+| `expiresAt` | <code>string \| null \| undefined</code> | No | Not applicable | UTC expiry for a timed override. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Type` | <code>string</code> | Yes | Not applicable | Event name from HookEvents. |
+| `Phase` | <code>string</code> | Yes | Not applicable | before or after. |
+| `Source` | <code>string</code> | Yes | Not applicable | api, stripe, or system. |
+| `OccurredAt` | <code>string</code> | Yes | Not applicable | UTC event timestamp. |
+| `EntityId` | <code>long?</code> | Yes | Not applicable | Numeric database ID: null before creation, known after creation and on existing records. |
+| `CustomerId` | <code>long?</code> | Yes | Not applicable | Owning customer database ID when available. |
+| `Old` | <code><a href="../subscriptions/#SubscriptionDto">SubscriptionDto</a>?</code> | Yes | Not applicable | Previous snapshot; null for creation. |
+| `New` | <code><a href="../subscriptions/#SubscriptionDto">SubscriptionDto</a>?</code> | Yes | Not applicable | Proposed before snapshot or saved after snapshot; null for deletion. |
+| `FeatureKey` | <code>string?</code> | Yes | Not applicable | Feature involved in an override event. |
+| `Value` | <code>string?</code> | Yes | Not applicable | Proposed override value. |
+| `OverrideType` | <code>string?</code> | Yes | Not applicable | permanent, temporary, or timed. |
+| `ExpiresAt` | <code>DateTime?</code> | Yes | Not applicable | UTC expiry for a timed override. |
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+Before hooks may change `new.expirationDate`, `cancellationDate`, `trialEndDate`, `currentPeriodStart`, `currentPeriodEnd`, `stripeSubscriptionId`, and `metadata`. Creation also permits `key`. Override-add events permit `value`, `overrideType`, and `expiresAt`. Activation and archive flags are not copied from this payload.
+
+</div>
+<div class="language-content" data-lang="net" markdown="1">
+
+Before hooks may change `New.ActivationDate`, `ExpirationDate`, `CancellationDate`, `TrialEndDate`, `CurrentPeriodStart`, `CurrentPeriodEnd`, `StripeSubscriptionId`, `Metadata`, and `IsArchived`; archive/unarchive operations enforce their own final archive flag. Creation also permits `Key`. Override-add events permit `Value`, `OverrideType`, and `ExpiresAt`.
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### HookPhase { #HookPhase }
+
+Event phase.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Value | Meaning |
+| --- | --- |
+| `before` | Before the operation saves or processes data. |
+| `after` | After the operation saves or finishes processing. |
+
+</div>
+<div class="language-content" data-lang="net" markdown="1">
+
+| Value | Meaning |
+| --- | --- |
+| `HookPhase.Before` | Before the operation saves or processes data. |
+| `HookPhase.After` | After the operation saves or finishes processing. |
+
+</div>
+</div>
+
+<div class="data-type" markdown="1">
+
+### CustomerMutationHookEvent { #CustomerMutationHookEvent }
+
+Payload for customer changes.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `type` | <code><a href="#HookEventName">HookEventName</a></code> | Yes | Not applicable | Event name from HookEvents. |
+| `phase` | <code><a href="#HookPhase">HookPhase</a></code> | Yes | Not applicable | before or after. |
+| `source` | <code><a href="#HookSource">HookSource</a></code> | Yes | Not applicable | api, stripe, or system. |
+| `occurredAt` | <code>string</code> | Yes | Not applicable | UTC event timestamp. |
+| `entityId` | <code>number \| null</code> | Yes | Not applicable | Numeric database ID: null before creation, known after creation and on existing records. |
+| `customerId` | <code>number \| null \| undefined</code> | No | Not applicable | Inherited optional field; customer events do not populate it. |
+| `old` | <code><a href="../customers/#CustomerDto">CustomerDto</a> \| null</code> | Yes | Not applicable | Previous snapshot; null for creation. |
+| `new` | <code><a href="../customers/#CustomerDto">CustomerDto</a> \| null</code> | Yes | Not applicable | Proposed before snapshot or saved after snapshot; null for deletion. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Type` | <code>string</code> | Yes | Not applicable | Event name from HookEvents. |
+| `Phase` | <code>string</code> | Yes | Not applicable | before or after. |
+| `Source` | <code>string</code> | Yes | Not applicable | api, stripe, or system. |
+| `OccurredAt` | <code>string</code> | Yes | Not applicable | UTC event timestamp. |
+| `EntityId` | <code>long?</code> | Yes | Not applicable | Numeric database ID: null before creation, known after creation and on existing records. |
+| `Old` | <code><a href="../customers/#CustomerDto">CustomerDto</a>?</code> | Yes | Not applicable | Previous snapshot; null for creation. |
+| `New` | <code><a href="../customers/#CustomerDto">CustomerDto</a>?</code> | Yes | Not applicable | Proposed before snapshot or saved after snapshot; null for deletion. |
+
+</div>
+
+</div>
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+Before hooks may change `new.displayName`, `email`, `externalBillingId`, and `metadata`; `key` may change only during creation. Status changes are controlled by the operation.
+
+</div>
+<div class="language-content" data-lang="net" markdown="1">
+
+Before hooks may change `New.DisplayName`, `Email`, `ExternalBillingId`, and `Metadata`; `Key` may change only during creation. Status changes are controlled by the operation.
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### StripeReceivedHookEvent { #StripeReceivedHookEvent }
+
+Payload for Stripe intake.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `type` | <code><a href="#HookEventName">HookEventName</a></code> | Yes | Not applicable | Event name from HookEvents. |
+| `phase` | <code><a href="#HookPhase">HookPhase</a></code> | Yes | Not applicable | before or after. |
+| `occurredAt` | <code>string</code> | Yes | Not applicable | UTC event timestamp. |
+| `data` | <code>Stripe.Event</code> | Yes | Not applicable | Snapshot of the parsed provider event. |
+| `stripeCustomerId` | <code>string \| undefined</code> | No | Not applicable | Provider customer ID when extractable. |
+| `stripeSubscriptionId` | <code>string \| undefined</code> | No | Not applicable | Provider subscription ID when extractable. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Type` | <code>string</code> | Yes | Not applicable | Event name from HookEvents. |
+| `Phase` | <code>string</code> | Yes | Not applicable | before or after. |
+| `OccurredAt` | <code>string</code> | Yes | Not applicable | UTC event timestamp. |
+| `Data` | <code>Stripe.Event</code> | Yes | Not applicable | Snapshot of the parsed provider event. |
+| `StripeCustomerId` | <code>string?</code> | Yes | Not applicable | Provider customer ID when extractable. |
+| `StripeSubscriptionId` | <code>string?</code> | Yes | Not applicable | Provider subscription ID when extractable. |
+
+</div>
+
+</div>
+
+## Related guides
+
+- [Extending Subscrio](how-to-extend.md): integration and audit patterns.
+- [Customers](customers.md): customer mutations.
+- [Subscriptions](subscriptions.md): lifecycle and override mutations.
+- [Stripe Integration](stripe-integration.md): provider event processing.
+- [Credits](credits.md): transactional accounting and retries.

@@ -1,566 +1,781 @@
 ---
 title: Customers
-description: Create and manage Subscrio customers, including immutable keys, archival, deletion rules, and Stripe externalBillingId mapping.
+description: Manage customer identities, billing contacts, and status.
+reference_format: true
 ---
 
-# Customer Management Service Reference
+# Customers
 
-## Service Overview
-Customers represent your end users or tenant accounts. This service manages creation, updates, lifecycle transitions (active/archived), uniqueness of customer keys, and optional `externalBillingId` (e.g., Stripe customer ID). Customers must be archived before deletion to ensure downstream data (subscriptions, invoices) can be reviewed.
+## Purpose
 
-- Customer keys are provided by your system and immutable once stored.
-- `externalBillingId` is optional but must remain unique when present.
-- Delete operations require the customer to be archived. `canDelete()` is archive-only; subscriptions are not checked.
+<span id="method-reference" class="compatibility-anchor"></span>
 
-TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
+<span id="overview" class="compatibility-anchor"></span>
 
-## Accessing the Service
+Customers identify the people or accounts that hold subscriptions. Their stable keys also identify usage and credit wallets; external billing IDs connect them to a payment provider.
 
-=== "TypeScript"
-    ```typescript
-    import { Subscrio } from 'subscrio';
+## Access and initialization
 
-    const subscrio = new Subscrio({ database: { connectionString: process.env.DATABASE_URL! } });
-    const customers = subscrio.customers;
-    ```
+### Access
 
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
+<div class="language-content" data-lang="ts" markdown="1">
 
-    var subscrio = new Subscrio(config);
-    var customers = subscrio.Customers;
-    ```
+```typescript
+const customers = subscrio.customers;
+```
 
-## Method Catalog
+</div>
+<div class="language-content" data-lang="net" markdown="1">
 
-=== "TypeScript"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `createCustomer` | Creates a new customer record | `Promise<CustomerDto>` |
-    | `updateCustomer` | Updates mutable fields | `Promise<CustomerDto>` |
-    | `getCustomer` | Retrieves a customer by key | `Promise<CustomerDto \| null>` |
-    | `listCustomers` | Lists customers with filters | `Promise<CustomerDto[]>` |
-    | `archiveCustomer` | Archives a customer | `Promise<void>` |
-    | `unarchiveCustomer` | Reactivates an archived customer | `Promise<void>` |
-    | `deleteCustomer` | Deletes an archived customer | `Promise<void>` |
+```csharp
+var customers = subscrio.Customers;
+```
 
-=== ".NET"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `CreateCustomerAsync` | Creates a new customer record | `Task<CustomerDto>` |
-    | `UpdateCustomerAsync` | Updates mutable fields | `Task<CustomerDto>` |
-    | `GetCustomerAsync` | Retrieves a customer by key | `Task<CustomerDto?>` |
-    | `ListCustomersAsync` | Lists customers with filters | `Task<List<CustomerDto>>` |
-    | `ArchiveCustomerAsync` | Archives a customer | `Task` |
-    | `UnarchiveCustomerAsync` | Reactivates an archived customer | `Task` |
-    | `DeleteCustomerAsync` | Deletes an archived customer | `Task` |
+</div>
 
-## Method Reference
+## Method catalog
 
-### createCustomer
+Database and connection failures may propagate from any operation. Method-specific errors are listed with each method.
 
-#### Description
- Validates a new customer payload, ensures the key and `externalBillingId` (if provided) are unique, and persists the customer with `active` status.
+<div class="language-content" data-lang="ts" markdown="1">
 
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    createCustomer(dto: CreateCustomerDto): Promise<CustomerDto>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<CustomerDto> CreateCustomerAsync(CreateCustomerDto dto)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `dto` | `CreateCustomerDto` | Yes | Customer definition supplied by your app. |
-
-#### Input Properties
-
-=== "TypeScript"
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Immutable identifier (1–255 chars). |
-    | `displayName` | `string` | No | Optional name (≤255 chars). |
-    | `email` | `string` | No | Valid email for billing contact. |
-    | `externalBillingId` | `string` | No | Unique ID from payment processor (≤255 chars). |
-    | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
-
-=== ".NET"
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `Key` | `string` | Yes | Immutable identifier (1–255 chars). |
-    | `DisplayName` | `string` | No | Optional name (≤255 chars). |
-    | `Email` | `string` | No | Valid email for billing contact. |
-    | `ExternalBillingId` | `string` | No | Unique ID from payment processor (≤255 chars). |
-    | `Metadata` | `Dictionary<string, object?>` | No | JSON-safe metadata. |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<CustomerDto>` – persisted customer snapshot.
-
-=== ".NET"
-    `Task<CustomerDto>` – persisted customer snapshot.
-
-#### Return Properties
-
-=== "TypeScript"
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `key` | `string` | Customer key. |
-    | `displayName` | `string \| null` | Display label. |
-    | `email` | `string \| null` | Billing email. |
-    | `externalBillingId` | `string \| null` | Stripe/processor customer ID. |
-    | `status` | `string` | `active`, `archived`, etc. |
-    | `metadata` | `Record<string, unknown> \| null` | Stored metadata. |
-    | `createdAt` | `string` | ISO timestamp. |
-    | `updatedAt` | `string` | ISO timestamp. |
-
-=== ".NET"
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `Key` | `string` | Customer key. |
-    | `DisplayName` | `string?` | Display label. |
-    | `Email` | `string?` | Billing email. |
-    | `ExternalBillingId` | `string?` | Stripe/processor customer ID. |
-    | `Status` | `string` | `active`, `archived`, etc. |
-    | `Metadata` | `Dictionary<string, object?>?` | Stored metadata. |
-    | `CreatedAt` | `string` | ISO timestamp. |
-    | `UpdatedAt` | `string` | ISO timestamp. |
-
-#### Expected Results
-- Validates DTO via schema.
-- Ensures customer key and `externalBillingId` (if provided) are unique.
-- Persists customer with `status = 'active'`.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | DTO invalid. |
-| `ConflictError` | Key or `externalBillingId` already in use. |
+| [`createCustomer`](#createcustomer) | Creates an active customer. |
+| [`updateCustomer`](#updatecustomer) | Updates contact and billing properties. |
+| [`getCustomer`](#getcustomer) | Gets a customer or null. |
+| [`listCustomers`](#listcustomers) | Lists matching customers. |
+| [`archiveCustomer`](#archivecustomer) | Archives a customer. |
+| [`unarchiveCustomer`](#unarchivecustomer) | Restores active status. |
+| [`deleteCustomer`](#deletecustomer) | Permanently deletes an archived customer. |
 
-#### Example
+</div>
 
-=== "TypeScript"
-    ```typescript
-    await customers.createCustomer({
-      key: 'cust_123',
-      displayName: 'Acme Corp',
-      email: 'billing@acme.test'
-    });
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    ```csharp
-    await subscrio.Customers.CreateCustomerAsync(new CreateCustomerDto(
-        Key: "cust_123",
-        DisplayName: "Acme Corp",
-        Email: "billing@acme.test"
-    ));
-    ```
-
-### updateCustomer
-
-#### Description
- Applies partial updates to display name, email, `externalBillingId`, or metadata.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    updateCustomer(key: string, dto: UpdateCustomerDto): Promise<CustomerDto>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<CustomerDto> UpdateCustomerAsync(string key, UpdateCustomerDto dto)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Customer key to mutate. |
-| `dto` | `UpdateCustomerDto` | Yes | Partial update payload. |
-
-#### Input Properties
-
-=== "TypeScript"
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `displayName` | `string` | No | Updated label (≤255 chars). |
-    | `email` | `string` | No | Valid email address. |
-    | `externalBillingId` | `string` | No | Unique processor/customer ID. |
-    | `metadata` | `Record<string, unknown>` | No | Replaces stored metadata blob. |
-
-=== ".NET"
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `DisplayName` | `string` | No | Updated label (≤255 chars). |
-    | `Email` | `string` | No | Valid email address. |
-    | `ExternalBillingId` | `string` | No | Unique processor/customer ID. |
-    | `Metadata` | `Dictionary<string, object?>` | No | Replaces stored metadata blob. |
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<CustomerDto>` – updated snapshot (same fields as above).
-
-=== ".NET"
-    `Task<CustomerDto>` – updated snapshot (same fields as above).
-
-#### Expected Results
-- Validates DTO.
-- Loads customer by key.
-- Ensures new `externalBillingId` is unique before saving.
-- Applies updates and refreshes `updatedAt`.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | DTO invalid. |
-| `NotFoundError` | Customer key not found. |
-| `ConflictError` | `externalBillingId` already used elsewhere. |
+| [`CreateCustomerAsync`](#createcustomer) | Creates an active customer. |
+| [`UpdateCustomerAsync`](#updatecustomer) | Updates contact and billing properties. |
+| [`GetCustomerAsync`](#getcustomer) | Gets a customer or null. |
+| [`ListCustomersAsync`](#listcustomers) | Lists matching customers. |
+| [`ArchiveCustomerAsync`](#archivecustomer) | Archives a customer. |
+| [`UnarchiveCustomerAsync`](#unarchivecustomer) | Restores active status. |
+| [`DeleteCustomerAsync`](#deletecustomer) | Permanently deletes an archived customer. |
 
-#### Example
+</div>
 
-=== "TypeScript"
-    ```typescript
-    await customers.updateCustomer('cust_123', {
-      displayName: 'Acme Corp (2025)',
-      metadata: { segment: 'enterprise' }
-    });
-    ```
+## Method details
 
-=== ".NET"
-    ```csharp
-    await subscrio.Customers.UpdateCustomerAsync("cust_123", new UpdateCustomerDto(
-        DisplayName: "Acme Corp (2025)",
-        Metadata: new Dictionary<string, object?> { ["segment"] = "enterprise" }
-    ));
-    ```
+<div class="method-entry" markdown="1">
 
-### getCustomer
+### createCustomer { #createcustomer data-method-ts="createCustomer" data-method-net="CreateCustomerAsync" }
 
-#### Description
- Fetches a customer by key; returns `null` when missing.
+<span id="description" class="compatibility-anchor"></span>
+<span id="signature" class="compatibility-anchor"></span>
+<span id="inputs" class="compatibility-anchor"></span>
+<span id="input-properties" class="compatibility-anchor"></span>
+<span id="returns" class="compatibility-anchor"></span>
+<span id="return-properties" class="compatibility-anchor"></span>
+<span id="expected-results" class="compatibility-anchor"></span>
+<span id="potential-errors" class="compatibility-anchor"></span>
+<span id="example" class="compatibility-anchor"></span>
 
-#### Signature
+Create an active customer with a unique key and, when supplied, a unique external billing ID. Customer mutations emit before and after [hooks](hooks.md).
 
-=== "TypeScript"
-    ```typescript
-    getCustomer(key: string): Promise<CustomerDto | null>
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== ".NET"
-    ```csharp
-    Task<CustomerDto?> GetCustomerAsync(string key)
-    ```
+<div class="signature" markdown="1">
 
-#### Inputs
+```typescript
+createCustomer(dto: CreateCustomerDto): Promise<CustomerDto>
+```
 
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Customer key. |
+</div>
 
-#### Returns
+**Parameters**
 
-=== "TypeScript"
-    `Promise<CustomerDto | null>`
+- `dto`: [CreateCustomerDto](#CreateCustomerDto) with a key and optional contact details.
 
-=== ".NET"
-    `Task<CustomerDto?>`
+**Returns** <code><a href="#CustomerDto">CustomerDto</a></code>: Saved customer properties.
 
-#### Return Properties
+**Example**
 
-=== "TypeScript"
-    - `CustomerDto` shape described in `createCustomer`.
+```typescript
+await subscrio.customers.createCustomer({
+  key: 'acme', displayName: 'Acme', email: 'billing@acme.test'
+});
+```
 
-=== ".NET"
-    - `CustomerDto` shape described in `createCustomer`.
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
 
-#### Expected Results
-- Reads from repository and returns DTO; `null` when key missing.
+- `ValidationError`: The customer properties are invalid.
+- `ConflictError`: The key or external billing ID is already used.
 
-#### Potential Errors
+</details>
 
-| Error | When |
-| --- | --- |
-| _None_ | Method returns `null` when the customer is missing. |
+</div>
 
-#### Example
+<div class="language-content" data-lang="net" markdown="1">
 
-=== "TypeScript"
-    ```typescript
-    const customer = await customers.getCustomer('cust_123');
-    if (!customer) throw new Error('Missing customer');
-    ```
+<div class="signature" markdown="1">
 
-=== ".NET"
-    ```csharp
-    var customer = await subscrio.Customers.GetCustomerAsync("cust_123");
-    if (customer == null) throw new InvalidOperationException("Missing customer");
-    ```
+```csharp
+Task<CustomerDto> CreateCustomerAsync(CreateCustomerDto dto)
+```
 
-### listCustomers
+</div>
 
-#### Description
- Lists customers with optional status/search filters and pagination.
+**Parameters**
 
-#### Signature
+- `dto`: [CreateCustomerDto](#CreateCustomerDto) with a key and optional contact details.
 
-=== "TypeScript"
-    ```typescript
-    listCustomers(filters?: CustomerFilterDto): Promise<CustomerDto[]>
-    ```
+**Returns** <code><a href="#CustomerDto">CustomerDto</a></code>: Saved customer properties.
 
-=== ".NET"
-    ```csharp
-    Task<List<CustomerDto>> ListCustomersAsync(CustomerFilterDto? filters = null)
-    ```
+**Example**
 
-#### Inputs
+```csharp
+await subscrio.Customers.CreateCustomerAsync(new CreateCustomerDto(
+    Key: "acme", DisplayName: "Acme", Email: "billing@acme.test"));
+```
 
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `filters` | `CustomerFilterDto` | No | Status filter, search term, pagination, sorting. |
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
 
-#### Input Properties
+- `ValidationException`: The customer properties are invalid.
+- `ConflictException`: The key or external billing ID is already used.
 
-=== "TypeScript"
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `status` | `'active' \| 'archived' \| 'suspended' \| 'deleted'` | Filter by stored status. This service writes `active` and `archived` only. |
-    | `search` | `string` | Matches key, displayName, or email. |
-    | `sortBy` | `'displayName' \| 'key' \| 'createdAt'` | Sort column. Default `createdAt`. |
-    | `sortOrder` | `'asc' \| 'desc'` | Query default `desc` when omitted. |
-    | `limit` | `number` | 1–100 (default 50). |
-    | `offset` | `number` | ≥0 (default 0). |
+</details>
 
-=== ".NET"
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `Status` | `string?` | `active`, `archived`, `suspended`, or `deleted`. This service writes `active` and `archived` only. |
-    | `Search` | `string?` | Matches key, display name, or email. |
-    | `SortBy` | `string?` | `displayName`, `key`, or `createdAt`. Default `createdAt`. |
-    | `SortOrder` | `string?` | `asc` or `desc`. Query default `desc` when omitted. |
-    | `Limit` | `int` | 1–100 (default 50). |
-    | `Offset` | `int` | ≥0 (default 0). |
+</div>
 
-#### Returns
+</div>
 
-=== "TypeScript"
-    `Promise<CustomerDto[]>`
+<div class="method-entry" markdown="1">
 
-=== ".NET"
-    `Task<List<CustomerDto>>`
+### updateCustomer { #updatecustomer data-method-ts="updateCustomer" data-method-net="UpdateCustomerAsync" }
 
-#### Return Properties
+<span id="description_1" class="compatibility-anchor"></span>
+<span id="signature_1" class="compatibility-anchor"></span>
+<span id="inputs_1" class="compatibility-anchor"></span>
+<span id="input-properties_1" class="compatibility-anchor"></span>
+<span id="returns_1" class="compatibility-anchor"></span>
+<span id="expected-results_1" class="compatibility-anchor"></span>
+<span id="potential-errors_1" class="compatibility-anchor"></span>
+<span id="example_1" class="compatibility-anchor"></span>
 
-=== "TypeScript"
-    - Array of `CustomerDto` entries (see `createCustomer`).
+Update contact and billing details without changing the customer key. Supplied metadata replaces the saved object; an empty object removes all metadata entries.
 
-=== ".NET"
-    - `List<CustomerDto>` (see `createCustomer`).
+<div class="language-content" data-lang="ts" markdown="1">
 
-#### Expected Results
-- Validates filters and returns DTO array.
+<div class="signature" markdown="1">
 
-#### Potential Errors
+```typescript
+updateCustomer(key: string, dto: UpdateCustomerDto): Promise<CustomerDto>
+```
 
-| Error | When |
-| --- | --- |
-| `ValidationError` | Filters invalid. |
+</div>
 
-#### Example
+**Parameters**
 
-=== "TypeScript"
-    ```typescript
-    const customersPage = await customers.listCustomers({
-      status: 'active',
-      search: 'acme',
-      limit: 25
-    });
-    ```
+- `key`: Customer key.
+- `dto`: [UpdateCustomerDto](#UpdateCustomerDto). Uses [partial updates](getting-started.md#partial-updates); explicit null is rejected.
 
-=== ".NET"
-    ```csharp
-    var customersPage = await subscrio.Customers.ListCustomersAsync(new CustomerFilterDto(
-        Status: "active",
-        Search: "acme",
-        Limit: 25
-    ));
-    ```
+**Returns** <code><a href="#CustomerDto">CustomerDto</a></code>: Saved customer properties.
 
-### archiveCustomer
+**Example**
 
-#### Description
- Marks a customer as archived (no new subscriptions should be issued).
+```typescript
+await subscrio.customers.updateCustomer('acme', {
+  displayName: 'Acme Corporation', metadata: { segment: 'enterprise' }
+});
+```
 
-#### Signature
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
 
-=== "TypeScript"
-    ```typescript
-    archiveCustomer(key: string): Promise<void>
-    ```
+- `ValidationError`: The updated properties are invalid.
+- `NotFoundError`: The customer does not exist.
+- `ConflictError`: Another customer uses the external billing ID.
 
-=== ".NET"
-    ```csharp
-    Task ArchiveCustomerAsync(string key)
-    ```
+</details>
 
-#### Inputs
+</div>
 
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Customer key. |
+<div class="language-content" data-lang="net" markdown="1">
 
-#### Returns
+<div class="signature" markdown="1">
 
-=== "TypeScript"
-    `Promise<void>`
+```csharp
+Task<CustomerDto> UpdateCustomerAsync(string key, UpdateCustomerDto dto)
+```
 
-=== ".NET"
-    `Task`
+</div>
 
-#### Expected Results
-- Loads customer, calls entity `archive()`, saves.
+**Parameters**
 
-#### Potential Errors
+- `key`: Customer key.
+- `dto`: [UpdateCustomerDto](#UpdateCustomerDto). Uses [partial updates](getting-started.md#partial-updates).
 
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Customer missing. |
+**Returns** <code><a href="#CustomerDto">CustomerDto</a></code>: Saved customer properties.
 
-#### Example
+**Example**
 
-=== "TypeScript"
-    ```typescript
-    await customers.archiveCustomer('cust_legacy');
-    ```
+```csharp
+await subscrio.Customers.UpdateCustomerAsync("acme", new UpdateCustomerDto(
+    DisplayName: "Acme Corporation",
+    Metadata: new Dictionary<string, object?> { ["segment"] = "enterprise" }));
+```
 
-=== ".NET"
-    ```csharp
-    await subscrio.Customers.ArchiveCustomerAsync("cust_legacy");
-    ```
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
 
-### unarchiveCustomer
+- `ValidationException`: The updated properties are invalid.
+- `NotFoundException`: The customer does not exist.
+- `ConflictException`: Another customer uses the external billing ID.
 
-#### Description
- Restores an archived customer to `active`.
+</details>
 
-#### Signature
+</div>
 
-=== "TypeScript"
-    ```typescript
-    unarchiveCustomer(key: string): Promise<void>
-    ```
+</div>
 
-=== ".NET"
-    ```csharp
-    Task UnarchiveCustomerAsync(string key)
-    ```
+<div class="method-entry" markdown="1">
 
-#### Inputs
+### getCustomer { #getcustomer data-method-ts="getCustomer" data-method-net="GetCustomerAsync" }
 
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Customer key. |
+<span id="description_2" class="compatibility-anchor"></span>
+<span id="signature_2" class="compatibility-anchor"></span>
+<span id="inputs_2" class="compatibility-anchor"></span>
+<span id="returns_2" class="compatibility-anchor"></span>
+<span id="return-properties_1" class="compatibility-anchor"></span>
+<span id="expected-results_2" class="compatibility-anchor"></span>
+<span id="potential-errors_2" class="compatibility-anchor"></span>
+<span id="example_2" class="compatibility-anchor"></span>
 
-#### Returns
+Retrieve customer details, including archived customers.
 
-=== "TypeScript"
-    `Promise<void>`
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== ".NET"
-    `Task`
+<div class="signature" markdown="1">
 
-#### Expected Results
-- Loads customer, calls `unarchive()`, saves.
+```typescript
+getCustomer(key: string): Promise<CustomerDto | null>
+```
 
-#### Potential Errors
+</div>
 
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Customer missing. |
+**Parameters**
 
-#### Example
+- `key`: Customer key.
 
-=== "TypeScript"
-    ```typescript
-    await customers.unarchiveCustomer('cust_legacy');
-    ```
+**Returns** <code><a href="#CustomerDto">CustomerDto</a> | null</code>: Customer details, or null when missing.
 
-=== ".NET"
-    ```csharp
-    await subscrio.Customers.UnarchiveCustomerAsync("cust_legacy");
-    ```
+**Example**
 
-### deleteCustomer
+```typescript
+const customer = await subscrio.customers.getCustomer('acme');
+console.log(customer?.displayName);
+```
 
-#### Description
- Permanently deletes a customer that has already been archived and passes domain checks.
+</div>
 
-#### Signature
+<div class="language-content" data-lang="net" markdown="1">
 
-=== "TypeScript"
-    ```typescript
-    deleteCustomer(key: string): Promise<void>
-    ```
+<div class="signature" markdown="1">
 
-=== ".NET"
-    ```csharp
-    Task DeleteCustomerAsync(string key)
-    ```
+```csharp
+Task<CustomerDto?> GetCustomerAsync(string key)
+```
 
-#### Inputs
+</div>
 
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | Customer to delete. |
+**Parameters**
 
-#### Returns
+- `key`: Customer key.
 
-=== "TypeScript"
-    `Promise<void>`
+**Returns** <code><a href="#CustomerDto">CustomerDto</a>?</code>: Customer details, or null when missing.
 
-=== ".NET"
-    `Task`
+**Example**
 
-#### Expected Results
-- Loads customer and requires archived status (`canDelete()`).
-- Deletes the record. Subscriptions are not checked.
+```csharp
+var customer = await subscrio.Customers.GetCustomerAsync("acme");
+Console.WriteLine(customer?.DisplayName);
+```
 
-#### Potential Errors
+</div>
 
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Customer missing. |
-| `ValidationError` | Customer is not archived. |
+</div>
 
-#### Example
+<div class="method-entry" markdown="1">
 
-=== "TypeScript"
-    ```typescript
-    await customers.deleteCustomer('cust_retired');
-    ```
+### listCustomers { #listcustomers data-method-ts="listCustomers" data-method-net="ListCustomersAsync" }
 
-=== ".NET"
-    ```csharp
-    await subscrio.Customers.DeleteCustomerAsync("cust_retired");
-    ```
+<span id="description_3" class="compatibility-anchor"></span>
+<span id="signature_3" class="compatibility-anchor"></span>
+<span id="inputs_3" class="compatibility-anchor"></span>
+<span id="input-properties_2" class="compatibility-anchor"></span>
+<span id="returns_3" class="compatibility-anchor"></span>
+<span id="return-properties_2" class="compatibility-anchor"></span>
+<span id="expected-results_3" class="compatibility-anchor"></span>
+<span id="potential-errors_3" class="compatibility-anchor"></span>
+<span id="example_3" class="compatibility-anchor"></span>
 
-## Related Workflows
-- Subscriptions reference customers by ID; deleting a customer does not cascade—clean related subscriptions manually if needed.
-- Stripe integration (`StripeIntegrationService`) expects `externalBillingId` to store the Stripe customer ID.
-- Feature checker APIs use customer keys to resolve entitlements; keep keys stable for the life of the user/account.
-- Customer mutations emit before/after [hooks](./hooks.md) (`customer.created.before`, `customer.created.after`, etc.). See [How to Extend](./how-to-extend.md) for audit logging.
+List customers with filtering, sorting, and pagination. Results default to newest-created first.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+listCustomers(filters?: CustomerFilterDto): Promise<CustomerDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: Optional [CustomerFilterDto](#CustomerFilterDto). Defaults to 50 results at offset zero.
+
+**Returns** <code><a href="#CustomerDto">CustomerDto</a>[]</code>: Matching customers, or an empty collection.
+
+**Example**
+
+```typescript
+const customers = await subscrio.customers.listCustomers({
+  status: 'active', search: 'acme', limit: 25, offset: 0
+});
+console.log(customers);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationError`: The filters or pagination values are invalid.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<CustomerDto>> ListCustomersAsync(CustomerFilterDto? filters)
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: Optional [CustomerFilterDto](#CustomerFilterDto). Defaults to 50 results at offset zero.
+
+**Returns** <code>List&lt;<a href="#CustomerDto">CustomerDto</a>&gt;</code>: Matching customers, or an empty collection.
+
+**Example**
+
+```csharp
+var customers = await subscrio.Customers.ListCustomersAsync(
+    new CustomerFilterDto(Status: "active", Search: "acme", Limit: 25));
+Console.WriteLine(customers.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: The filters or pagination values are invalid.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### archiveCustomer { #archivecustomer data-method-ts="archiveCustomer" data-method-net="ArchiveCustomerAsync" }
+
+<span id="description_4" class="compatibility-anchor"></span>
+<span id="signature_4" class="compatibility-anchor"></span>
+<span id="inputs_4" class="compatibility-anchor"></span>
+<span id="returns_4" class="compatibility-anchor"></span>
+<span id="expected-results_4" class="compatibility-anchor"></span>
+<span id="potential-errors_4" class="compatibility-anchor"></span>
+<span id="example_4" class="compatibility-anchor"></span>
+
+Mark the customer as archived while retaining their subscriptions and history. Archiving does not cancel subscriptions.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+archiveCustomer(key: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Customer key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+await subscrio.customers.archiveCustomer('acme');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The customer does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task ArchiveCustomerAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Customer key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Customers.ArchiveCustomerAsync("acme");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The customer does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### unarchiveCustomer { #unarchivecustomer data-method-ts="unarchiveCustomer" data-method-net="UnarchiveCustomerAsync" }
+
+<span id="description_5" class="compatibility-anchor"></span>
+<span id="signature_5" class="compatibility-anchor"></span>
+<span id="inputs_5" class="compatibility-anchor"></span>
+<span id="returns_5" class="compatibility-anchor"></span>
+<span id="expected-results_5" class="compatibility-anchor"></span>
+<span id="potential-errors_5" class="compatibility-anchor"></span>
+<span id="example_5" class="compatibility-anchor"></span>
+
+Restore the customer to active status without changing their subscriptions.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+unarchiveCustomer(key: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Customer key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+await subscrio.customers.unarchiveCustomer('acme');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The customer does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task UnarchiveCustomerAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Customer key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.Customers.UnarchiveCustomerAsync("acme");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The customer does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### deleteCustomer { #deletecustomer data-method-ts="deleteCustomer" data-method-net="DeleteCustomerAsync" }
+
+<span id="description_6" class="compatibility-anchor"></span>
+<span id="signature_6" class="compatibility-anchor"></span>
+<span id="inputs_6" class="compatibility-anchor"></span>
+<span id="returns_6" class="compatibility-anchor"></span>
+<span id="expected-results_6" class="compatibility-anchor"></span>
+<span id="potential-errors_6" class="compatibility-anchor"></span>
+<span id="example_6" class="compatibility-anchor"></span>
+<span id="related-workflows" class="compatibility-anchor"></span>
+<span id="customer-accounting-history" class="compatibility-anchor"></span>
+
+Permanently delete an archived customer. Database cascades also delete dependent subscriptions and their overrides. Retained usage, credit, or related accounting history can block deletion; archive customers whose history must remain.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+deleteCustomer(key: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Customer key.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+// acme is archived and has no retained accounting history.
+await subscrio.customers.deleteCustomer('acme');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `NotFoundError`: The customer does not exist.
+- `ValidationError`: The customer is not archived.
+- `ConflictError`: Retained accounting or related history prevents deletion.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task DeleteCustomerAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: Customer key.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+// acme is archived and has no retained accounting history.
+await subscrio.Customers.DeleteCustomerAsync("acme");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (3)</summary>
+
+- `NotFoundException`: The customer does not exist.
+- `DomainException`: The customer is not archived.
+- `ConflictException`: Retained accounting or related history prevents deletion.
+
+</details>
+
+</div>
+
+</div>
+
+## Data types
+
+Required means an input must be supplied, or an output property is guaranteed present.
+
+<div class="data-type" markdown="1">
+
+### CreateCustomerDto { #CreateCustomerDto }
+
+Customer creation properties.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Stable identifier. |
+| `displayName` | <code>string \| undefined</code> | No | None | Optional label, at most 255 characters. |
+| `email` | <code>string \| undefined</code> | No | None | Valid contact email address. |
+| `externalBillingId` | <code>string \| undefined</code> | No | None | Unique payment-provider customer ID, at most 255 characters. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Application metadata; updates replace the entire object. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Stable identifier. |
+| `DisplayName` | <code>string?</code> | No | null | Optional label, at most 255 characters. |
+| `Email` | <code>string?</code> | No | null | Valid contact email address. |
+| `ExternalBillingId` | <code>string?</code> | No | null | Unique payment-provider customer ID, at most 255 characters. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Application metadata; updates replace the entire object. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### CustomerDto { #CustomerDto }
+
+Customer details returned by queries and mutations.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | Not applicable | Stable identifier. |
+| `displayName` | <code>string \| null \| undefined</code> | No | Not applicable | Optional label, at most 255 characters. |
+| `email` | <code>string \| null \| undefined</code> | No | Not applicable | Valid contact email address. |
+| `externalBillingId` | <code>string \| null \| undefined</code> | No | Not applicable | Unique payment-provider customer ID, at most 255 characters. |
+| `status` | <code>string</code> | Yes | Not applicable | Stored status. These methods write active or archived. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| null \| undefined</code> | No | Not applicable | Application metadata; updates replace the entire object. |
+| `createdAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
+| `updatedAt` | <code>string</code> | Yes | Not applicable | Last update time in UTC. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | Not applicable | Stable identifier. |
+| `DisplayName` | <code>string?</code> | Yes | Not applicable | Optional label, at most 255 characters. |
+| `Email` | <code>string?</code> | Yes | Not applicable | Valid contact email address. |
+| `ExternalBillingId` | <code>string?</code> | Yes | Not applicable | Unique payment-provider customer ID, at most 255 characters. |
+| `Status` | <code>string</code> | Yes | Not applicable | Stored status. These methods write active or archived. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | Yes | Not applicable | Application metadata; updates replace the entire object. |
+| `CreatedAt` | <code>string</code> | Yes | Not applicable | Creation time in UTC. |
+| `UpdatedAt` | <code>string</code> | Yes | Not applicable | Last update time in UTC. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### UpdateCustomerDto { #UpdateCustomerDto }
+
+Customer update properties.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `displayName` | <code>string \| undefined</code> | No | None | Optional label, at most 255 characters. |
+| `email` | <code>string \| undefined</code> | No | None | Valid contact email address. |
+| `externalBillingId` | <code>string \| undefined</code> | No | None | Unique payment-provider customer ID, at most 255 characters. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Application metadata; updates replace the entire object. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `DisplayName` | <code>string?</code> | No | null | Optional label, at most 255 characters. |
+| `Email` | <code>string?</code> | No | null | Valid contact email address. |
+| `ExternalBillingId` | <code>string?</code> | No | null | Unique payment-provider customer ID, at most 255 characters. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Application metadata; updates replace the entire object. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### CustomerFilterDto { #CustomerFilterDto }
+
+Customer search options. TypeScript requires limit and offset when supplying a filter object.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `limit` | <code>number</code> | Yes | 50 | Maximum page size, 1 to 100. |
+| `offset` | <code>number</code> | Yes | 0 | Nonnegative number of rows to skip. |
+| `status` | <code>&quot;active&quot; \| &quot;archived&quot; \| &quot;suspended&quot; \| &quot;deleted&quot; \| undefined</code> | No | None | active, archived, suspended, or deleted. |
+| `search` | <code>string \| undefined</code> | No | None | Match the key, display name, or email. |
+| `sortBy` | <code>&quot;key&quot; \| &quot;displayName&quot; \| &quot;createdAt&quot; \| undefined</code> | No | None | displayName, key, or createdAt; defaults to createdAt. |
+| `sortOrder` | <code>&quot;asc&quot; \| &quot;desc&quot; \| undefined</code> | No | None | asc or desc; defaults to desc. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Status` | <code>string?</code> | No | null | active, archived, suspended, or deleted. |
+| `Search` | <code>string?</code> | No | null | Match the key, display name, or email. |
+| `SortBy` | <code>string?</code> | No | null | displayName, key, or createdAt; defaults to createdAt. |
+| `SortOrder` | <code>string?</code> | No | null | asc or desc; defaults to desc. |
+| `Limit` | <code>int</code> | No | 50 | Maximum page size, 1 to 100. |
+| `Offset` | <code>int</code> | No | 0 | Nonnegative number of rows to skip. |
+
+</div>
+
+</div>
+
+## Related guides
+
+- [Subscriptions](subscriptions.md): create subscriptions for a customer.
+- [Credits](credits.md): customer wallets and retained accounting history.
+- [Hooks](hooks.md): react to customer changes.
+- [Stripe Integration](stripe-integration.md): match external billing IDs.

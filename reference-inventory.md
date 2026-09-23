@@ -1,220 +1,250 @@
-# Subscrio API Reference Inventory
+# Subscrio reference inventory
 
-Source of truth for documentation verification. Extracted from local `../core/typescript/` and `../core/dotnet/` in the workspace — never from npm or NuGet.
+Public operations documented from the adjacent TypeScript and .NET checkouts. All 14 pages follow AGENTS.md and FORMAT-SPEC.md, with the site-wide language selector, linked property definitions, and language-specific signatures. A dash means that language exposes a different API; see the page for supported alternatives.
 
-**Source paths:**
-- `../core/typescript/src/application/services/*.ts`
-- `../core/typescript/src/application/dtos/*.ts`
-- `../core/typescript/src/Subscrio.ts`
-- `../core/dotnet/src/Application/Services/*.cs`
-- `../core/dotnet/src/Application/DTOs/*.cs`
-- `../core/dotnet/src/Subscrio.cs`
+## Subscrio
 
----
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `new Subscrio` | `new Subscrio` | [Constructor](docs/reference/core-overview.md#constructor) |
+| `installSchema` | `InstallSchemaAsync` | [Subscrio](docs/reference/core-overview.md#installschema) |
+| `migrate` | `MigrateAsync` | [Subscrio](docs/reference/core-overview.md#migrate) |
+| `verifySchema` | `VerifySchemaAsync` | [Subscrio](docs/reference/core-overview.md#verifyschema) |
+| `runInitialConfigSync` | `RunInitialConfigSyncAsync` | [Subscrio](docs/reference/core-overview.md#runinitialconfigsync) |
+| `dropSchema` | `DropSchemaAsync` | [Subscrio](docs/reference/core-overview.md#dropschema) |
+| `close` | `Dispose` | [Subscrio](docs/reference/core-overview.md#close) |
 
-## Reference Pages & Scope
+## Features
 
-| Page | Service / Class | Method Count | Doc Status |
-|------|-----------------|--------------|------------|
-| `index.md` | Welcome | — | ✓ Verified against source 2026-08-23 |
-| `getting-started.md` | Guide | — | ✓ Verified against source 2026-08-23 |
-| `core-overview.md` | Subscrio (root) | 6 | ✓ Verified against source 2026-08-23 |
-| `subscription-lifecycle.md` | Status view / ComputeStatus | — | ✓ Verified against source 2026-08-23 |
-| `subscriptions.md` | SubscriptionManagementService | 13 | ✓ Verified against source 2026-08-23 |
-| `products.md` | ProductManagementService | 9 | ✓ Verified against source 2026-08-23 |
-| `features.md` | FeatureManagementService | 8 | ✓ Verified against source 2026-08-23 |
-| `plans.md` | PlanManagementService | 12 | ✓ Verified against source 2026-08-23 |
-| `billing-cycles.md` | BillingCycleManagementService | 11 | ✓ Verified against source 2026-08-23 |
-| `customers.md` | CustomerManagementService | 7 | ✓ Verified against source 2026-08-23 |
-| `feature-checker.md` | FeatureCheckerService | 9 | ✓ Verified against source 2026-08-23 |
-| `hooks.md` | HookDispatcher | 28 events | ✓ Verified against source 2026-08-23 |
-| `how-to-extend.md` | payments + audit-log | — | ✓ Verified against source 2026-08-23 |
-| `config-sync.md` | ConfigSyncService | 2 | ✓ Verified against source 2026-08-23 |
-| `how-to-integrate-with-stripe.md` | Guide | — | ✓ Verified against source 2026-08-23 |
-| `stripe-integration.md` | StripeIntegrationService | 3 | ✓ Verified against source 2026-08-23 |
-| `relationships.md` | Model | — | ✓ Verified against source 2026-08-23 |
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `createFeature` | `CreateFeatureAsync` | [Features](docs/reference/features.md#createfeature) |
+| `updateFeature` | `UpdateFeatureAsync` | [Features](docs/reference/features.md#updatefeature) |
+| `getFeature` | `GetFeatureAsync` | [Features](docs/reference/features.md#getfeature) |
+| `listFeatures` | `ListFeaturesAsync` | [Features](docs/reference/features.md#listfeatures) |
+| `getFeaturesByProduct` | `GetFeaturesByProductAsync` | [Features](docs/reference/features.md#getfeaturesbyproduct) |
+| `archiveFeature` | `ArchiveFeatureAsync` | [Features](docs/reference/features.md#archivefeature) |
+| `unarchiveFeature` | `UnarchiveFeatureAsync` | [Features](docs/reference/features.md#unarchivefeature) |
+| `deleteFeature` | `DeleteFeatureAsync` | [Features](docs/reference/features.md#deletefeature) |
 
----
+## Add-ons
 
-## SubscriptionManagementService (subscriptions.md)
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `createAddon` | `CreateAddonAsync` | [Add-ons](docs/reference/addons.md#createaddon) |
+| `updateAddon` | `UpdateAddonAsync` | [Add-ons](docs/reference/addons.md#updateaddon) |
+| `getAddon` | `GetAddonAsync` | [Add-ons](docs/reference/addons.md#getaddon) |
+| `listAddons` | `ListAddonsAsync` | [Add-ons](docs/reference/addons.md#listaddons) |
+| `archiveAddon` | `ArchiveAddonAsync` | [Add-ons](docs/reference/addons.md#archiveaddon) |
+| `unarchiveAddon` | `UnarchiveAddonAsync` | [Add-ons](docs/reference/addons.md#unarchiveaddon) |
+| `deleteAddon` | `DeleteAddonAsync` | [Add-ons](docs/reference/addons.md#deleteaddon) |
 
-**Access:** `subscrio.subscriptions` (TS) / `subscrio.Subscriptions` (.NET)
+## Products
 
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `createSubscription(dto)` | `CreateSubscriptionAsync(dto)` | CreateSubscriptionDto | SubscriptionDto |
-| 2 | `updateSubscription(subscriptionKey, dto)` | `UpdateSubscriptionAsync(subscriptionKey, dto)` | string, UpdateSubscriptionDto | SubscriptionDto |
-| 3 | `getSubscription(subscriptionKey)` | `GetSubscriptionAsync(subscriptionKey)` | string | SubscriptionDto \| null |
-| 4 | `listSubscriptions(filters?)` | `ListSubscriptionsAsync(filters?)` | SubscriptionFilterDto? | SubscriptionDto[] |
-| 5 | `findSubscriptions(filters)` | `FindSubscriptionsAsync(filters)` | DetailedSubscriptionFilterDto | SubscriptionDto[] |
-| 6 | `getSubscriptionsByCustomer(customerKey)` | `GetSubscriptionsByCustomerAsync(customerKey)` | string | SubscriptionDto[] |
-| 7 | `archiveSubscription(subscriptionKey)` | `ArchiveSubscriptionAsync(subscriptionKey)` | string | void |
-| 8 | `unarchiveSubscription(subscriptionKey)` | `UnarchiveSubscriptionAsync(subscriptionKey)` | string | void |
-| 9 | `deleteSubscription(subscriptionKey)` | `DeleteSubscriptionAsync(subscriptionKey)` | string | void |
-| 10 | `addFeatureOverride(subscriptionKey, featureKey, value, overrideType?)` | `AddFeatureOverrideAsync(...)` | string, string, string, OverrideType? | void |
-| 11 | `removeFeatureOverride(subscriptionKey, featureKey)` | `RemoveFeatureOverrideAsync(...)` | string, string | void |
-| 12 | `clearTemporaryOverrides(subscriptionKey)` | `ClearTemporaryOverridesAsync(subscriptionKey)` | string | void |
-| 13 | `transitionExpiredSubscriptions()` | `TransitionExpiredSubscriptionsAsync()` | — | TransitionExpiredSubscriptionsReport |
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `createProduct` | `CreateProductAsync` | [Products](docs/reference/products.md#createproduct) |
+| `updateProduct` | `UpdateProductAsync` | [Products](docs/reference/products.md#updateproduct) |
+| `getProduct` | `GetProductAsync` | [Products](docs/reference/products.md#getproduct) |
+| `listProducts` | `ListProductsAsync` | [Products](docs/reference/products.md#listproducts) |
+| `associateFeature` | `AssociateFeatureAsync` | [Products](docs/reference/products.md#associatefeature) |
+| `dissociateFeature` | `DissociateFeatureAsync` | [Products](docs/reference/products.md#dissociatefeature) |
+| `archiveProduct` | `ArchiveProductAsync` | [Products](docs/reference/products.md#archiveproduct) |
+| `unarchiveProduct` | `UnarchiveProductAsync` | [Products](docs/reference/products.md#unarchiveproduct) |
+| `deleteProduct` | `DeleteProductAsync` | [Products](docs/reference/products.md#deleteproduct) |
 
----
+## Plans
 
-## ProductManagementService (products.md)
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `createPlan` | `CreatePlanAsync` | [Plans](docs/reference/plans.md#createplan) |
+| `updatePlan` | `UpdatePlanAsync` | [Plans](docs/reference/plans.md#updateplan) |
+| `getPlan` | `GetPlanAsync` | [Plans](docs/reference/plans.md#getplan) |
+| `listPlans` | `ListPlansAsync` | [Plans](docs/reference/plans.md#listplans) |
+| `getPlansByProduct` | `GetPlansByProductAsync` | [Plans](docs/reference/plans.md#getplansbyproduct) |
+| `setFeatureValue` | `SetFeatureValueAsync` | [Plans](docs/reference/plans.md#setfeaturevalue) |
+| `removeFeatureValue` | `RemoveFeatureValueAsync` | [Plans](docs/reference/plans.md#removefeaturevalue) |
+| `getFeatureValue` | `GetFeatureValueAsync` | [Plans](docs/reference/plans.md#getfeaturevalue) |
+| `getPlanFeatures` | `GetPlanFeaturesAsync` | [Plans](docs/reference/plans.md#getplanfeatures) |
+| `archivePlan` | `ArchivePlanAsync` | [Plans](docs/reference/plans.md#archiveplan) |
+| `unarchivePlan` | `UnarchivePlanAsync` | [Plans](docs/reference/plans.md#unarchiveplan) |
+| `deletePlan` | `DeletePlanAsync` | [Plans](docs/reference/plans.md#deleteplan) |
 
-**Access:** `subscrio.products` / `subscrio.Products`
+## Billing Cycles
 
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `createProduct(dto)` | `CreateProductAsync(dto)` | CreateProductDto | ProductDto |
-| 2 | `updateProduct(key, dto)` | `UpdateProductAsync(key, dto)` | string, UpdateProductDto | ProductDto |
-| 3 | `getProduct(key)` | `GetProductAsync(key)` | string | ProductDto \| null |
-| 4 | `listProducts(filters?)` | `ListProductsAsync(filters?)` | ProductFilterDto? | ProductDto[] |
-| 5 | `deleteProduct(key)` | `DeleteProductAsync(key)` | string | void |
-| 6 | `archiveProduct(key)` | `ArchiveProductAsync(key)` | string | ProductDto |
-| 7 | `unarchiveProduct(key)` | `UnarchiveProductAsync(key)` | string | ProductDto |
-| 8 | `associateFeature(productKey, featureKey)` | `AssociateFeatureAsync(...)` | string, string | void |
-| 9 | `dissociateFeature(productKey, featureKey)` | `DissociateFeatureAsync(...)` | string, string | void |
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `createBillingCycle` | `CreateBillingCycleAsync` | [Billing Cycles](docs/reference/billing-cycles.md#createbillingcycle) |
+| `updateBillingCycle` | `UpdateBillingCycleAsync` | [Billing Cycles](docs/reference/billing-cycles.md#updatebillingcycle) |
+| `getBillingCycle` | `GetBillingCycleAsync` | [Billing Cycles](docs/reference/billing-cycles.md#getbillingcycle) |
+| `listBillingCycles` | `ListBillingCyclesAsync` | [Billing Cycles](docs/reference/billing-cycles.md#listbillingcycles) |
+| `getBillingCyclesByPlan` | `GetBillingCyclesByPlanAsync` | [Billing Cycles](docs/reference/billing-cycles.md#getbillingcyclesbyplan) |
+| `archiveBillingCycle` | `ArchiveBillingCycleAsync` | [Billing Cycles](docs/reference/billing-cycles.md#archivebillingcycle) |
+| `unarchiveBillingCycle` | `UnarchiveBillingCycleAsync` | [Billing Cycles](docs/reference/billing-cycles.md#unarchivebillingcycle) |
+| `deleteBillingCycle` | `DeleteBillingCycleAsync` | [Billing Cycles](docs/reference/billing-cycles.md#deletebillingcycle) |
+| `calculateNextPeriodEnd` | `CalculateNextPeriodEndAsync` | [Billing Cycles](docs/reference/billing-cycles.md#calculatenextperiodend) |
+| `getBillingCyclesByDurationUnit` | `GetBillingCyclesByDurationUnitAsync` | [Billing Cycles](docs/reference/billing-cycles.md#getbillingcyclesbydurationunit) |
+| `getDefaultBillingCycles` | `GetDefaultBillingCyclesAsync` | [Billing Cycles](docs/reference/billing-cycles.md#getdefaultbillingcycles) |
 
----
+## Customers
 
-## FeatureManagementService (features.md)
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `createCustomer` | `CreateCustomerAsync` | [Customers](docs/reference/customers.md#createcustomer) |
+| `updateCustomer` | `UpdateCustomerAsync` | [Customers](docs/reference/customers.md#updatecustomer) |
+| `getCustomer` | `GetCustomerAsync` | [Customers](docs/reference/customers.md#getcustomer) |
+| `listCustomers` | `ListCustomersAsync` | [Customers](docs/reference/customers.md#listcustomers) |
+| `archiveCustomer` | `ArchiveCustomerAsync` | [Customers](docs/reference/customers.md#archivecustomer) |
+| `unarchiveCustomer` | `UnarchiveCustomerAsync` | [Customers](docs/reference/customers.md#unarchivecustomer) |
+| `deleteCustomer` | `DeleteCustomerAsync` | [Customers](docs/reference/customers.md#deletecustomer) |
 
-**Access:** `subscrio.features` / `subscrio.Features`
+## Subscriptions
 
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `createFeature(dto)` | `CreateFeatureAsync(dto)` | CreateFeatureDto | FeatureDto |
-| 2 | `updateFeature(key, dto)` | `UpdateFeatureAsync(key, dto)` | string, UpdateFeatureDto | FeatureDto |
-| 3 | `getFeature(key)` | `GetFeatureAsync(key)` | string | FeatureDto \| null |
-| 4 | `listFeatures(filters?)` | `ListFeaturesAsync(filters?)` | FeatureFilterDto? | FeatureDto[] |
-| 5 | `archiveFeature(key)` | `ArchiveFeatureAsync(key)` | string | void |
-| 6 | `unarchiveFeature(key)` | `UnarchiveFeatureAsync(key)` | string | void |
-| 7 | `deleteFeature(key)` | `DeleteFeatureAsync(key)` | string | void |
-| 8 | `getFeaturesByProduct(productKey)` | `GetFeaturesByProductAsync(productKey)` | string | FeatureDto[] |
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `createSubscription` | `CreateSubscriptionAsync` | [Subscriptions](docs/reference/subscriptions.md#createsubscription) |
+| `updateSubscription` | `UpdateSubscriptionAsync` | [Subscriptions](docs/reference/subscriptions.md#updatesubscription) |
+| `getSubscription` | `GetSubscriptionAsync` | [Subscriptions](docs/reference/subscriptions.md#getsubscription) |
+| `listSubscriptions` | `ListSubscriptionsAsync` | [Subscriptions](docs/reference/subscriptions.md#listsubscriptions) |
+| `findSubscriptions` | `FindSubscriptionsAsync` | [Subscriptions](docs/reference/subscriptions.md#findsubscriptions) |
+| `getSubscriptionsByCustomer` | `GetSubscriptionsByCustomerAsync` | [Subscriptions](docs/reference/subscriptions.md#getsubscriptionsbycustomer) |
+| `attachAddon` | `AttachAddonAsync` | [Subscriptions](docs/reference/subscriptions.md#attachaddon) |
+| `detachAddon` | `DetachAddonAsync` | [Subscriptions](docs/reference/subscriptions.md#detachaddon) |
+| `getAddons` | `GetAddonsAsync` | [Subscriptions](docs/reference/subscriptions.md#getaddons) |
+| `addFeatureOverride` | `AddFeatureOverrideAsync` | [Subscriptions](docs/reference/subscriptions.md#addfeatureoverride) |
+| `removeFeatureOverride` | `RemoveFeatureOverrideAsync` | [Subscriptions](docs/reference/subscriptions.md#removefeatureoverride) |
+| `clearTemporaryOverrides` | `ClearTemporaryOverridesAsync` | [Subscriptions](docs/reference/subscriptions.md#cleartemporaryoverrides) |
+| `archiveSubscription` | `ArchiveSubscriptionAsync` | [Subscriptions](docs/reference/subscriptions.md#archivesubscription) |
+| `unarchiveSubscription` | `UnarchiveSubscriptionAsync` | [Subscriptions](docs/reference/subscriptions.md#unarchivesubscription) |
+| `deleteSubscription` | `DeleteSubscriptionAsync` | [Subscriptions](docs/reference/subscriptions.md#deletesubscription) |
+| `transitionExpiredSubscriptions` | `TransitionExpiredSubscriptionsAsync` | [Subscriptions](docs/reference/subscriptions.md#transitionexpiredsubscriptions) |
 
----
+## Feature Checker
 
-## PlanManagementService (plans.md)
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `getValueForCustomer` | `GetValueForCustomerAsync` | [Feature Checker](docs/reference/feature-checker.md#getvalueforcustomer) |
+| `isEnabledForCustomer` | `IsEnabledForCustomerAsync` | [Feature Checker](docs/reference/feature-checker.md#isenabledforcustomer) |
+| `getAllFeaturesForCustomer` | `GetAllFeaturesForCustomerAsync` | [Feature Checker](docs/reference/feature-checker.md#getallfeaturesforcustomer) |
+| `getValueForSubscription` | `GetValueForSubscriptionAsync` | [Feature Checker](docs/reference/feature-checker.md#getvalueforsubscription) |
+| `isEnabledForSubscription` | `IsEnabledForSubscriptionAsync` | [Feature Checker](docs/reference/feature-checker.md#isenabledforsubscription) |
+| `getAllFeaturesForSubscription` | `GetAllFeaturesForSubscriptionAsync` | [Feature Checker](docs/reference/feature-checker.md#getallfeaturesforsubscription) |
+| `hasPlanAccess` | `HasPlanAccessAsync` | [Feature Checker](docs/reference/feature-checker.md#hasplanaccess) |
+| `getActivePlans` | `GetActivePlansAsync` | [Feature Checker](docs/reference/feature-checker.md#getactiveplans) |
+| `getFeatureUsageSummary` | `GetFeatureUsageSummaryAsync` | [Feature Checker](docs/reference/feature-checker.md#getfeatureusagesummary) |
+| `explainForCustomer` | `ExplainForCustomerAsync` | [Feature Checker](docs/reference/feature-checker.md#explainforcustomer) |
+| `explainForSubscription` | `ExplainForSubscriptionAsync` | [Feature Checker](docs/reference/feature-checker.md#explainforsubscription) |
 
-**Access:** `subscrio.plans` / `subscrio.Plans`
+## Metered Usage
 
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `createPlan(dto)` | `CreatePlanAsync(dto)` | CreatePlanDto | PlanDto |
-| 2 | `updatePlan(planKey, dto)` | `UpdatePlanAsync(planKey, dto)` | string, UpdatePlanDto | PlanDto |
-| 3 | `getPlan(planKey)` | `GetPlanAsync(planKey)` | string | PlanDto \| null |
-| 4 | `listPlans(filters?)` | `ListPlansAsync(filters?)` | PlanFilterDto? | PlanDto[] |
-| 5 | `getPlansByProduct(productKey)` | `GetPlansByProductAsync(productKey)` | string | PlanDto[] |
-| 6 | `archivePlan(planKey)` | `ArchivePlanAsync(planKey)` | string | void |
-| 7 | `unarchivePlan(planKey)` | `UnarchivePlanAsync(planKey)` | string | void |
-| 8 | `deletePlan(planKey)` | `DeletePlanAsync(planKey)` | string | void |
-| 9 | `setFeatureValue(planKey, featureKey, value)` | `SetFeatureValueAsync(...)` | string, string, string | void |
-| 10 | `removeFeatureValue(planKey, featureKey)` | `RemoveFeatureValueAsync(...)` | string, string | void |
-| 11 | `getFeatureValue(planKey, featureKey)` | `GetFeatureValueAsync(...)` | string, string | string \| null |
-| 12 | `getPlanFeatures(planKey)` | `GetPlanFeaturesAsync(planKey)` | string | PlanFeatureDto[] / Array<{featureKey,value}> |
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `getUsage` | `GetUsageAsync` | [Metered Usage](docs/reference/metering.md#getusage) |
+| `reportUsage` | `ReportUsageAsync` | [Metered Usage](docs/reference/metering.md#reportusage) |
+| `listUsageEvents` | `ListUsageEventsAsync` | [Metered Usage](docs/reference/metering.md#listusageevents) |
 
----
+## Credits
 
-## BillingCycleManagementService (billing-cycles.md)
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `createCurrency` | `CreateCurrencyAsync` | [Credits](docs/reference/credits.md#createcurrency) |
+| `updateCurrency` | `UpdateCurrencyAsync` | [Credits](docs/reference/credits.md#updatecurrency) |
+| `getCurrency` | `GetCurrencyAsync` | [Credits](docs/reference/credits.md#getcurrency) |
+| `listCurrencies` | `ListCurrenciesAsync` | [Credits](docs/reference/credits.md#listcurrencies) |
+| `setPlanGrant` | `SetPlanGrantAsync` | [Credits](docs/reference/credits.md#setplangrant) |
+| `getPlanGrant` | `GetPlanGrantAsync` | [Credits](docs/reference/credits.md#getplangrant) |
+| `listPlanGrants` | `ListPlanGrantsAsync` | [Credits](docs/reference/credits.md#listplangrants) |
+| `removePlanGrant` | `RemovePlanGrantAsync` | [Credits](docs/reference/credits.md#removeplangrant) |
+| `setConsumptionRule` | `SetConsumptionRuleAsync` | [Credits](docs/reference/credits.md#setconsumptionrule) |
+| `getConsumptionRule` | `GetConsumptionRuleAsync` | [Credits](docs/reference/credits.md#getconsumptionrule) |
+| `listConsumptionRules` | `ListConsumptionRulesAsync` | [Credits](docs/reference/credits.md#listconsumptionrules) |
+| `removeConsumptionRule` | `RemoveConsumptionRuleAsync` | [Credits](docs/reference/credits.md#removeconsumptionrule) |
+| `grant` | `GrantAsync` | [Credits](docs/reference/credits.md#grant) |
+| `issueDuePlanGrants` | `IssueDuePlanGrantsAsync` | [Credits](docs/reference/credits.md#issuedueplangrants) |
+| `processScheduledGrants` | `ProcessScheduledGrantsAsync` | [Credits](docs/reference/credits.md#processscheduledgrants) |
+| `getBalance` | `GetBalanceAsync` | [Credits](docs/reference/credits.md#getbalance) |
+| `listBalances` | `ListBalancesAsync` | [Credits](docs/reference/credits.md#listbalances) |
+| `canConsume` | `CanConsumeAsync` | [Credits](docs/reference/credits.md#canconsume) |
+| `consume` | `ConsumeAsync` | [Credits](docs/reference/credits.md#consume) |
+| `adjust` | `AdjustAsync` | [Credits](docs/reference/credits.md#adjust) |
+| `listGrants` | `ListGrantsAsync` | [Credits](docs/reference/credits.md#listgrants) |
+| `getOperation` | `GetOperationAsync` | [Credits](docs/reference/credits.md#getoperation) |
+| `listLedgerEntries` | `ListLedgerEntriesAsync` | [Credits](docs/reference/credits.md#listledgerentries) |
+| `archiveCurrency` | `ArchiveCurrencyAsync` | [Credits](docs/reference/credits.md#archivecurrency) |
+| `unarchiveCurrency` | `UnarchiveCurrencyAsync` | [Credits](docs/reference/credits.md#unarchivecurrency) |
+| `deleteCurrency` | `DeleteCurrencyAsync` | [Credits](docs/reference/credits.md#deletecurrency) |
 
-**Access:** `subscrio.billingCycles` / `subscrio.BillingCycles`
+## Hooks
 
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `createBillingCycle(dto)` | `CreateBillingCycleAsync(dto)` | CreateBillingCycleDto | BillingCycleDto |
-| 2 | `updateBillingCycle(key, dto)` | `UpdateBillingCycleAsync(key, dto)` | string, UpdateBillingCycleDto | BillingCycleDto |
-| 3 | `getBillingCycle(key)` | `GetBillingCycleAsync(key)` | string | BillingCycleDto \| null |
-| 4 | `getBillingCyclesByPlan(planKey)` | `GetBillingCyclesByPlanAsync(planKey)` | string | BillingCycleDto[] |
-| 5 | `listBillingCycles(filters?)` | `ListBillingCyclesAsync(filters?)` | BillingCycleFilterDto? | BillingCycleDto[] |
-| 6 | `archiveBillingCycle(key)` | `ArchiveBillingCycleAsync(key)` | string | void |
-| 7 | `unarchiveBillingCycle(key)` | `UnarchiveBillingCycleAsync(key)` | string | void |
-| 8 | `deleteBillingCycle(key)` | `DeleteBillingCycleAsync(key)` | string | void |
-| 9 | `calculateNextPeriodEnd(billingCycleKey, currentPeriodEnd)` | `CalculateNextPeriodEndAsync(billingCycleKey, currentPeriodEnd)` | string, Date | Date \| null |
-| 10 | `getBillingCyclesByDurationUnit(durationUnit)` | `GetBillingCyclesByDurationUnitAsync(...)` | DurationUnit | BillingCycleDto[] |
-| 11 | `getDefaultBillingCycles()` | `GetDefaultBillingCyclesAsync()` | — | BillingCycleDto[] |
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `on` | — | [Hooks](docs/reference/hooks.md#on) |
+| `off` | — | [Hooks](docs/reference/hooks.md#off) |
+| `hasListeners` | `HasListeners` | [Hooks](docs/reference/hooks.md#haslisteners) |
+| `emit` | — | [Hooks](docs/reference/hooks.md#emit) |
+| — | `OnCustomerCreatedBefore` | [Hooks](docs/reference/hooks.md#oncustomercreatedbefore) |
+| — | `OnCustomerCreatedAfter` | [Hooks](docs/reference/hooks.md#oncustomercreatedafter) |
+| — | `OnCustomerUpdatedBefore` | [Hooks](docs/reference/hooks.md#oncustomerupdatedbefore) |
+| — | `OnCustomerUpdatedAfter` | [Hooks](docs/reference/hooks.md#oncustomerupdatedafter) |
+| — | `OnCustomerArchivedBefore` | [Hooks](docs/reference/hooks.md#oncustomerarchivedbefore) |
+| — | `OnCustomerArchivedAfter` | [Hooks](docs/reference/hooks.md#oncustomerarchivedafter) |
+| — | `OnCustomerUnarchivedBefore` | [Hooks](docs/reference/hooks.md#oncustomerunarchivedbefore) |
+| — | `OnCustomerUnarchivedAfter` | [Hooks](docs/reference/hooks.md#oncustomerunarchivedafter) |
+| — | `OnCustomerDeletedBefore` | [Hooks](docs/reference/hooks.md#oncustomerdeletedbefore) |
+| — | `OnCustomerDeletedAfter` | [Hooks](docs/reference/hooks.md#oncustomerdeletedafter) |
+| — | `OnSubscriptionCreatedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptioncreatedbefore) |
+| — | `OnSubscriptionCreatedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptioncreatedafter) |
+| — | `OnSubscriptionUpdatedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptionupdatedbefore) |
+| — | `OnSubscriptionUpdatedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptionupdatedafter) |
+| — | `OnSubscriptionArchivedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptionarchivedbefore) |
+| — | `OnSubscriptionArchivedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptionarchivedafter) |
+| — | `OnSubscriptionUnarchivedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptionunarchivedbefore) |
+| — | `OnSubscriptionUnarchivedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptionunarchivedafter) |
+| — | `OnSubscriptionDeletedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptiondeletedbefore) |
+| — | `OnSubscriptionDeletedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptiondeletedafter) |
+| — | `OnSubscriptionFeatureOverrideAddedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptionfeatureoverrideaddedbefore) |
+| — | `OnSubscriptionFeatureOverrideAddedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptionfeatureoverrideaddedafter) |
+| — | `OnSubscriptionFeatureOverrideRemovedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptionfeatureoverrideremovedbefore) |
+| — | `OnSubscriptionFeatureOverrideRemovedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptionfeatureoverrideremovedafter) |
+| — | `OnSubscriptionTemporaryOverridesClearedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptiontemporaryoverridesclearedbefore) |
+| — | `OnSubscriptionTemporaryOverridesClearedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptiontemporaryoverridesclearedafter) |
+| — | `OnStripeReceivedBefore` | [Hooks](docs/reference/hooks.md#onstripereceivedbefore) |
+| — | `OnStripeReceivedAfter` | [Hooks](docs/reference/hooks.md#onstripereceivedafter) |
+| — | `OnSubscriptionAddonAttachedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptionaddonattachedbefore) |
+| — | `OnSubscriptionAddonAttachedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptionaddonattachedafter) |
+| — | `OnSubscriptionAddonDetachedBefore` | [Hooks](docs/reference/hooks.md#onsubscriptionaddondetachedbefore) |
+| — | `OnSubscriptionAddonDetachedAfter` | [Hooks](docs/reference/hooks.md#onsubscriptionaddondetachedafter) |
+| — | `OnUsageReportedBefore` | [Hooks](docs/reference/hooks.md#onusagereportedbefore) |
+| — | `OnUsageReportedAfter` | [Hooks](docs/reference/hooks.md#onusagereportedafter) |
+| — | `OnCreditConsumedBefore` | [Hooks](docs/reference/hooks.md#oncreditconsumedbefore) |
+| — | `OnCreditConsumedAfter` | [Hooks](docs/reference/hooks.md#oncreditconsumedafter) |
+| — | `OnCreditGrantedBefore` | [Hooks](docs/reference/hooks.md#oncreditgrantedbefore) |
+| — | `OnCreditGrantedAfter` | [Hooks](docs/reference/hooks.md#oncreditgrantedafter) |
+| — | `OnCreditAdjustedBefore` | [Hooks](docs/reference/hooks.md#oncreditadjustedbefore) |
+| — | `OnCreditAdjustedAfter` | [Hooks](docs/reference/hooks.md#oncreditadjustedafter) |
+| — | `EmitCustomerBeforeAsync` | [Hooks](docs/reference/hooks.md#emitcustomerbeforeasync) |
+| — | `EmitCustomerAfterAsync` | [Hooks](docs/reference/hooks.md#emitcustomerafterasync) |
+| — | `EmitSubscriptionBeforeAsync` | [Hooks](docs/reference/hooks.md#emitsubscriptionbeforeasync) |
+| — | `EmitSubscriptionAfterAsync` | [Hooks](docs/reference/hooks.md#emitsubscriptionafterasync) |
+| — | `EmitStripeReceivedAsync` | [Hooks](docs/reference/hooks.md#emitstripereceivedasync) |
 
----
+## Configuration Sync
 
-## CustomerManagementService (customers.md)
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `syncFromFile` | `SyncFromFileAsync` | [Configuration Sync](docs/reference/config-sync.md#syncfromfile) |
+| `syncFromJson` | `SyncFromJsonAsync` | [Configuration Sync](docs/reference/config-sync.md#syncfromjson) |
+| `exportConfig` | `ExportConfigAsync` | [Configuration Sync](docs/reference/config-sync.md#exportconfig) |
 
-**Access:** `subscrio.customers` / `subscrio.Customers`
+## Stripe Integration
 
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `createCustomer(dto)` | `CreateCustomerAsync(dto)` | CreateCustomerDto | CustomerDto |
-| 2 | `updateCustomer(key, dto)` | `UpdateCustomerAsync(key, dto)` | string, UpdateCustomerDto | CustomerDto |
-| 3 | `getCustomer(key)` | `GetCustomerAsync(key)` | string | CustomerDto \| null |
-| 4 | `listCustomers(filters?)` | `ListCustomersAsync(filters?)` | CustomerFilterDto? | CustomerDto[] |
-| 5 | `archiveCustomer(key)` | `ArchiveCustomerAsync(key)` | string | void |
-| 6 | `unarchiveCustomer(key)` | `UnarchiveCustomerAsync(key)` | string | void |
-| 7 | `deleteCustomer(key)` | `DeleteCustomerAsync(key)` | string | void |
+| TypeScript | .NET | Reference |
+| --- | --- | --- |
+| `createCheckoutSession` | `CreateCheckoutSessionAsync` | [Stripe Integration](docs/reference/stripe-integration.md#createcheckoutsession) |
+| `constructStripeEvent` | — | [Stripe Integration](docs/reference/stripe-integration.md#constructstripeevent) |
+| `processStripeEvent` | `ProcessStripeEventAsync` | [Stripe Integration](docs/reference/stripe-integration.md#processstripeevent) |
+| `createStripeSubscription` | `CreateStripeSubscriptionAsync` | [Stripe Integration](docs/reference/stripe-integration.md#createstripesubscription) |
 
----
+## Workflow guides
 
-## FeatureCheckerService (feature-checker.md)
-
-**Access:** `subscrio.featureChecker` / `subscrio.FeatureChecker`
-
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `getValueForSubscription(subscriptionKey, featureKey, defaultValue?)` | `GetValueForSubscriptionAsync<T>(...)` | string, string, T? | T \| null |
-| 2 | `isEnabledForSubscription(subscriptionKey, featureKey)` | `IsEnabledForSubscriptionAsync(...)` | string, string | boolean |
-| 3 | `getAllFeaturesForSubscription(subscriptionKey)` | `GetAllFeaturesForSubscriptionAsync(...)` | string | Map<string,string> |
-| 4 | `getValueForCustomer(customerKey, productKey, featureKey, defaultValue?)` | `GetValueForCustomerAsync<T>(...)` | string, string, string, T? | T \| null |
-| 5 | `isEnabledForCustomer(customerKey, productKey, featureKey)` | `IsEnabledForCustomerAsync(...)` | string, string, string | boolean |
-| 6 | `getAllFeaturesForCustomer(customerKey, productKey)` | `GetAllFeaturesForCustomerAsync(...)` | string, string | Map<string,string> |
-| 7 | `hasPlanAccess(customerKey, productKey, planKey)` | `HasPlanAccessAsync(...)` | string, string, string | boolean |
-| 8 | `getActivePlans(customerKey)` | `GetActivePlansAsync(customerKey)` | string | string[] |
-| 9 | `getFeatureUsageSummary(customerKey, productKey)` | `GetFeatureUsageSummaryAsync(...)` | string, string | FeatureUsageSummaryDto |
-
----
-
-## ConfigSyncService (config-sync.md)
-
-**Access:** `subscrio.configSync` / `subscrio.ConfigSync`
-
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `syncFromFile(filePath)` | `SyncFromFileAsync(filePath)` | string | ConfigSyncReport |
-| 2 | `syncFromJson(config)` | `SyncFromJsonAsync(config)` | ConfigSyncDto | ConfigSyncReport |
-
----
-
-## StripeIntegrationService (stripe-integration.md)
-
-**Access:** `subscrio.stripe` / `subscrio.Stripe`
-
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `processStripeEvent(event)` | `ProcessStripeEventAsync(event)` | Stripe.Event | void |
-| 2 | `createStripeSubscription(customerKey, planKey, billingCycleKey, stripePriceId)` | `CreateStripeSubscriptionAsync(...)` | string, string, string, string | SubscriptionDto / Subscription |
-| 3 | `createCheckoutSession(params)` | `CreateCheckoutSessionAsync(params)` | CreateCheckoutSessionParams | { url, sessionId } |
-
----
-
-## Subscrio (core-overview.md)
-
-**Root class:** `new Subscrio(config)`
-
-| # | TS Method | .NET Method | Inputs | Returns |
-|---|-----------|-------------|--------|---------|
-| 1 | `installSchema(adminPassphrase?)` | `InstallSchemaAsync(adminPassphrase?)` | string? | void |
-| 2 | `verifySchema()` | `VerifySchemaAsync()` | — | string \| null |
-| 3 | `migrate()` | `MigrateAsync()` | — | number |
-| 4 | `dropSchema()` | `DropSchemaAsync()` | — | void |
-| 5 | `runInitialConfigSync()` | `RunInitialConfigSyncAsync()` | — | ConfigSyncReport \| null |
-| 6 | `close()` | `Dispose()` | — | void |
-
----
-
-## Documentation Format Rules (from subscriptions)
-
-Every method section MUST follow:
-1. **Description** (shared)
-2. **=== "TypeScript"** tab: Signature, Inputs, Input Properties (if DTO), Returns, Return Properties (if DTO), Example
-3. **=== ".NET"** tab: Same structure with PascalCase / C# types
-4. **Expected Results** (shared)
-5. **Potential Errors** (shared)
-
-- TypeScript: camelCase, column header `Field`
-- .NET: PascalCase, column header `Property`
-- Verify against `../core/typescript/` and `../core/dotnet/` before marking complete
+Welcome and Getting Started introduce the library. Guides cover the model, lifecycle, how feature values are calculated, add-ons and overrides, metered usage, credit wallets, and configuration management. Extensions and Stripe Setup cover integration workflows; Relationships and Schema Upgrade cover database structure and operation. Shared update conventions live in Getting Started.

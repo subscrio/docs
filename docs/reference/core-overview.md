@@ -1,633 +1,922 @@
 ---
-title: Core API
-description: Reference for the Subscrio class, configuration, and public services in the TypeScript package and the Subscrio.Core .NET package.
+title: Subscrio
+description: Initialize Subscrio, configure its objects, and manage the database schema in TypeScript and .NET.
+reference_format: true
 ---
 
-# Subscrio Core API Reference
+# Subscrio
 
-Reference for the shared entitlement model and public services exposed by the `subscrio` TypeScript package and `Subscrio.Core` .NET package.
+## Purpose
 
-## Main Class
+<span id="method-reference" class="compatibility-anchor"></span>
 
-### Subscrio
+<span id="subscrio-typescript" class="compatibility-anchor"></span>
+<span id="subscrio-net" class="compatibility-anchor"></span>
+<span id="method-catalog-typescript" class="compatibility-anchor"></span>
+<span id="method-catalog-net" class="compatibility-anchor"></span>
 
-=== "TypeScript"
-    ```typescript
-    import { Subscrio } from 'subscrio';
+<span id="main-class" class="compatibility-anchor"></span>
 
-    const subscrio = new Subscrio({
-      database: {
-        connectionString: process.env.DATABASE_URL
-      }
-    });
-    ```
+<span id="core-overview" class="compatibility-anchor"></span>
 
-=== ".NET"
-    Direct construction:
+Subscrio is the entry point for the library. Configure its database connection, then use its objects to manage your catalog, subscriptions, feature checks, usage, and credits.
 
-    ```csharp
-    using Subscrio.Core;
+<span id="partial-updates" class="compatibility-anchor"></span>
 
-    var subscrio = new Subscrio(new SubscrioConfig
+## Access and initialization
+
+### Access
+
+Create one instance for your application or dependency-injection scope. Install the schema for a new database, or verify and migrate an existing installation before using the catalog. Examples on the object pages use this initialized `subscrio` instance.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+```typescript
+import { Subscrio } from 'subscrio';
+
+const subscrio = new Subscrio({
+  database: { connectionString: process.env.DATABASE_URL! }
+});
+
+const version = await subscrio.verifySchema();
+if (version === null) await subscrio.installSchema();
+else await subscrio.migrate();
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+```csharp
+using Subscrio.Core;
+using Subscrio.Core.Config;
+
+using var subscrio = new Subscrio.Core.Subscrio(new SubscrioConfig
+{
+    Database = new DatabaseConfig
     {
-        Database = new DatabaseConfig
-        {
-            ConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL") ?? ""
-        }
-    });
-    ```
+        ConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL")!
+    }
+});
 
-    **Dependency injection (ASP.NET Core / generic host):** Register Subscrio with the service collection so it is resolved per scope (recommended for web apps). Add `using Subscrio.Core.DependencyInjection;` and call `services.AddSubscrio(config, ServiceLifetime.Scoped)`. Then inject `Subscrio` in controllers or minimal API handlers. Use `ServiceLifetime.Scoped` for web apps; use `Transient` for console or background services. See [Getting Started](getting-started.md) for a full bootstrap and DI example.
+var version = await subscrio.VerifySchemaAsync();
+if (version is null) await subscrio.InstallSchemaAsync();
+else await subscrio.MigrateAsync();
+```
 
-## Method Catalog
+</div>
 
-=== "TypeScript"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `installSchema` | Creates every Subscrio database table, seeds configuration rows, and optionally writes the admin passphrase hash | `Promise<void>` |
-    | `migrate` | Runs pending database migrations to update the schema to the latest version | `Promise<number>` |
-    | `verifySchema` | Confirms whether the Subscrio schema is already installed and returns the current schema version | `Promise<string \| null>` |
-    | `dropSchema` | Removes every table created by Subscrio (for local development resets or automated tests) | `Promise<void>` |
-    | `runInitialConfigSync` | If `initialConfig` was passed to the constructor, runs config sync (file or JSON) and returns the report; otherwise returns `null` | `Promise<ConfigSyncReport \| null>` |
-    | `close` | Closes the database connection pool | `Promise<void>` |
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `InstallSchemaAsync` | Creates every Subscrio database table, seeds configuration rows, and optionally writes the admin passphrase hash | `Task` |
-    | `MigrateAsync` | Runs pending database migrations to update the schema to the latest version | `Task<int>` |
-    | `VerifySchemaAsync` | Confirms whether the Subscrio schema is already installed and returns the current schema version | `Task<string?>` |
-    | `DropSchemaAsync` | Removes every table created by Subscrio (for local development resets or automated tests) | `Task` |
-    | `RunInitialConfigSyncAsync` | If `InitialConfig` was passed to the constructor, runs config sync (file or JSON) and returns the report; otherwise returns `null` | `Task<ConfigSyncReport?>` |
-    | `Dispose` | Closes the database connection pool | `void` |
+For ASP.NET Core, register with `services.AddSubscrio(config, ServiceLifetime.Scoped)` from `Subscrio.Core.DependencyInjection` and inject `Subscrio` into each request scope. The container disposes it with the scope. See [Getting Started](getting-started.md) for the complete registration example.
 
-## Method Reference
+</div>
 
-### Constructor
+<div class="method-entry" markdown="1">
 
-#### Description
- Instantiates the core library, initializes the database connection, and wires every repository and service so callers can use Subscrio synchronously after construction.
+### Constructor { #constructor data-method-ts="Constructor" data-method-net="Constructor" }
 
-#### Signature
+<span id="description" class="compatibility-anchor"></span>
+<span id="signature" class="compatibility-anchor"></span>
+<span id="signature-typescript" class="compatibility-anchor"></span>
+<span id="signature-net" class="compatibility-anchor"></span>
+<span id="inputs" class="compatibility-anchor"></span>
+<span id="input-properties" class="compatibility-anchor"></span>
+<span id="returns" class="compatibility-anchor"></span>
+<span id="returns-typescript" class="compatibility-anchor"></span>
+<span id="returns-net" class="compatibility-anchor"></span>
+<span id="return-properties" class="compatibility-anchor"></span>
+<span id="return-properties-typescript" class="compatibility-anchor"></span>
+<span id="return-properties-net" class="compatibility-anchor"></span>
+<span id="expected-results" class="compatibility-anchor"></span>
+<span id="potential-errors" class="compatibility-anchor"></span>
+<span id="example" class="compatibility-anchor"></span>
+<span id="example-typescript" class="compatibility-anchor"></span>
+<span id="example-net" class="compatibility-anchor"></span>
+<span id="configuration-object-typescript" class="compatibility-anchor"></span>
+<span id="configuration-object-net" class="compatibility-anchor"></span>
+<span id="database-object-typescript" class="compatibility-anchor"></span>
+<span id="database-object-net" class="compatibility-anchor"></span>
+<span id="adminpassphrase" class="compatibility-anchor"></span>
+<span id="stripe-object-typescript" class="compatibility-anchor"></span>
+<span id="stripe-object-net" class="compatibility-anchor"></span>
+<span id="logging-object-typescript" class="compatibility-anchor"></span>
+<span id="logging-object-net" class="compatibility-anchor"></span>
 
-=== "TypeScript"
-    ```typescript
-    new Subscrio(config: SubscrioConfig)
-    ```
+Create the library instance and its public objects. Construction does not install the schema or apply initial configuration. TypeScript supports PostgreSQL; .NET supports PostgreSQL and SQL Server.
 
-=== ".NET"
-    ```csharp
-    new Subscrio(SubscrioConfig config)
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-#### Inputs
+<div class="signature" markdown="1">
 
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `config` | [`SubscrioConfig`](#configuration-object) | Yes | Database connection plus optional passphrase, Stripe, logging, hooks, and initial config. |
+```typescript
+new Subscrio(config: SubscrioConfig)
+```
 
-#### Input Properties
+</div>
 
-- [`SubscrioConfig`](#configuration-object) – high-level shape that includes the `database`, `stripe`, `logging`, `hooks`, and `initialConfig` objects defined later in this page.
+**Parameters**
 
-#### Returns
+- `config`: [SubscrioConfig](#SubscrioConfig) with the database connection and optional integration settings.
 
-=== "TypeScript"
-    Creates a new `Subscrio` instance that exposes the services listed in the [Service Reference Index](#service-reference-index).
+**Example**
 
-=== ".NET"
-    Creates a new `Subscrio` instance that exposes the services listed in the [Service Reference Index](#service-reference-index).
+```typescript
+const configured = new Subscrio({
+  database: { connectionString: process.env.DATABASE_URL! },
+  initialConfig: { type: 'file', filePath: './subscrio.json' }
+});
+```
 
-#### Return Properties
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
 
-=== "TypeScript"
-    - `Subscrio` – instance with properties such as `products`, `plans`, `featureChecker`, etc.
+- `ConfigurationError`: SQL Server was selected for the TypeScript runtime.
 
-=== ".NET"
-    - `Subscrio` – instance with properties such as `Products`, `Plans`, `FeatureChecker`, etc.
+</details>
 
-#### Expected Results
+</div>
 
-- TypeScript opens a PostgreSQL connection using `config.database`.
-- .NET opens PostgreSQL or SQL Server using `config.Database`, including `DatabaseType` (default `PostgreSQL`).
-- Constructs repository instances and wires each service with its dependencies.
-- Keeps a shared schema installer for schema management helpers.
+<div class="language-content" data-lang="net" markdown="1">
 
-#### Potential Errors
+<div class="signature" markdown="1">
 
-| Error | When |
+```csharp
+new Subscrio(SubscrioConfig config)
+```
+
+</div>
+
+**Parameters**
+
+- `config`: [SubscrioConfig](#SubscrioConfig) with the database connection and optional integration settings.
+
+**Example**
+
+```csharp
+using var configured = new Subscrio.Core.Subscrio(new SubscrioConfig
+{
+    Database = new DatabaseConfig
+    {
+        ConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL")!
+    },
+    InitialConfig = new InitialConfigOptions { FilePath = "./subscrio.json" }
+});
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ArgumentException`: The configured database provider is unsupported.
+
+</details>
+
+</div>
+
+</div>
+
+## Method catalog
+
+Database and connection failures may propagate from any operation. Method-specific errors are listed with each method.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Method | Purpose |
 | --- | --- |
-| `Error` / `ApplicationException` | Thrown if required config such as `DATABASE_URL` is missing when using `loadConfig()` / `ConfigLoader.LoadConfig()`. Construction itself does not throw `ConfigurationError`. |
+| [`installSchema`](#installschema) | Installs the database schema. |
+| [`migrate`](#migrate) | Applies pending schema migrations. |
+| [`verifySchema`](#verifyschema) | Reads the installed schema version. |
+| [`runInitialConfigSync`](#runinitialconfigsync) | Applies the initial catalog configuration. |
+| [`dropSchema`](#dropschema) | Permanently removes Subscrio tables and data. |
+| [`close`](#close) | Releases database resources. |
 
-#### Example
+</div>
 
-=== "TypeScript"
-    ```typescript
-    const subscrio = new Subscrio({
-      database: { connectionString: process.env.DATABASE_URL! },
-      adminPassphrase: process.env.ADMIN_PASSPHRASE
-    });
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    ```csharp
-    var subscrio = new Subscrio(new SubscrioConfig
-    {
-        Database = new DatabaseConfig { ConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL")! },
-        AdminPassphrase = Environment.GetEnvironmentVariable("ADMIN_PASSPHRASE")
-    });
-    ```
-
-#### Configuration object
-
-`Subscrio` consumes a strongly typed config. Only `database.connectionString` (TypeScript) / `Database.ConnectionString` (.NET) is required; every other field is optional.
-
-=== "TypeScript"
-    Config is defined in `src/config/types.ts`:
-
-    ```typescript
-    export interface SubscrioConfig {
-      database: {
-        connectionString: string;
-        ssl?: boolean;
-        poolSize?: number;
-      };
-      adminPassphrase?: string;
-      stripe?: { secretKey: string };
-      logging?: { level: 'debug' | 'info' | 'warn' | 'error' };
-      initialConfig?: InitialConfigSync;  // { type: 'file', filePath: string } | { type: 'json', config: ConfigSyncDto }
-      hooks?: HooksConfig;
-    }
-    ```
-
-=== ".NET"
-    Config is defined in `Subscrio.Core.Config`:
-
-    ```csharp
-    public class SubscrioConfig
-    {
-        public required DatabaseConfig Database { get; init; }
-        public string? AdminPassphrase { get; init; }
-        public StripeConfig? Stripe { get; init; }
-        public LoggingConfig? Logging { get; init; }
-        public InitialConfigOptions? InitialConfig { get; init; }  // FilePath and/or Config for config sync
-        public SubscrioHooksOptions? Hooks { get; init; }
-    }
-
-    public class DatabaseConfig
-    {
-        public required string ConnectionString { get; init; }
-        public bool Ssl { get; init; }
-        public int PoolSize { get; init; } = 10;
-        public DatabaseType DatabaseType { get; init; } = DatabaseType.PostgreSQL;
-    }
-    ```
-
-##### `database` object
-
-=== "TypeScript"
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `connectionString` | `string` | Yes | Full Postgres URI (`postgresql://user:pass@host:port/db`). |
-    | `ssl` | `boolean` | No | Forces SSL when running outside trusted networks. |
-    | `poolSize` | `number` | No | Custom pg pool size; defaults to driver preset. |
-
-=== ".NET"
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `ConnectionString` | `string` | Yes | PostgreSQL or SQL Server connection string. |
-    | `Ssl` | `bool` | No | Forces SSL when running outside trusted networks. |
-    | `PoolSize` | `int` | No | Custom pool size; defaults to 10. |
-    | `DatabaseType` | `DatabaseType` | No | `PostgreSQL` (default) or `SqlServer`. |
-
-##### `adminPassphrase`
-
-Optional override for the admin passphrase hash stored during `installSchema()` / `InstallSchemaAsync()`. If omitted you can pass the passphrase directly to the install method.
-
-##### `initialConfig` / `InitialConfig`
-
-Optional config sync input (same as used by [ConfigSyncService](config-sync.md)): a file path or a `ConfigSyncDto` object. If set, call `runInitialConfigSync()` / `RunInitialConfigSyncAsync()` after construction (e.g. after installing or verifying the schema) to apply the configuration. When provided, that method runs the sync and returns the report; when omitted, it returns `null`.
-
-##### `stripe` object
-
-=== "TypeScript"
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `secretKey` | `string` | Yes | Private Stripe secret used by `createCheckoutSession` and by your webhook endpoint when creating a Stripe client. `createStripeSubscription` does not call Stripe. |
-
-=== ".NET"
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `SecretKey` | `string` | Yes | Private Stripe secret used by `CreateCheckoutSessionAsync` and by your webhook endpoint when creating a Stripe client. `CreateStripeSubscriptionAsync` does not call Stripe. |
-
-##### `logging` object
-
-=== "TypeScript"
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `level` | `'debug' \| 'info' \| 'warn' \| 'error'` | Yes | Sets global log verbosity for Subscrio internals. |
-
-=== ".NET"
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `Level` | `LogLevel` | No | `Debug`, `Info` (default), `Warn`, or `Error`. |
-
-### installSchema
-
-#### Description
- Creates every Subscrio database table, seeds configuration rows, and optionally writes the admin passphrase hash when setting up a fresh environment.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    installSchema(adminPassphrase?: string): Promise<void>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task InstallSchemaAsync(string? adminPassphrase = null)
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| `adminPassphrase` | `string` | No | Optional override that supersedes `config.adminPassphrase`. |
-
-#### Input Properties
-
-- `adminPassphrase` – plain text string that will be hashed before being stored in `system_config`.
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<void>` – resolves when the schema is fully installed.
-
-=== ".NET"
-    `Task` – completes when the schema is fully installed.
-
-#### Return Properties
-
-=== "TypeScript"
-    - `void`
-
-=== ".NET"
-    - None (`Task` returns no value)
-
-#### Expected Results
-
-- Runs the schema installer to create all tables, extensions, and seed configuration rows.
-- Stores the admin passphrase hash when provided.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ConfigurationError` | Database connection unavailable or migration prerequisites missing. |
-| `DomainError` | Passphrase validation fails the policy enforced by the installer. |
+| [`InstallSchemaAsync`](#installschema) | Installs the database schema. |
+| [`MigrateAsync`](#migrate) | Applies pending schema migrations. |
+| [`VerifySchemaAsync`](#verifyschema) | Reads the installed schema version. |
+| [`RunInitialConfigSyncAsync`](#runinitialconfigsync) | Applies the initial catalog configuration. |
+| [`DropSchemaAsync`](#dropschema) | Permanently removes Subscrio tables and data. |
+| [`Dispose`](#close) | Releases database resources. |
 
-#### Example
+</div>
 
-=== "TypeScript"
-    ```typescript
-    await subscrio.installSchema('super-secret-passphrase');
-    ```
+## Method details
 
-=== ".NET"
-    ```csharp
-    await subscrio.InstallSchemaAsync("super-secret-passphrase");
-    ```
+<div class="method-entry" markdown="1">
 
-### migrate
+### installSchema { #installschema data-method-ts="installSchema" data-method-net="InstallSchemaAsync" }
 
-#### Description
-Runs pending database migrations to update the schema to the latest version. Migrations are tracked via `schema_version` in the `system_config` table, so only pending migrations are applied.
+<span id="description_1" class="compatibility-anchor"></span>
+<span id="signature_1" class="compatibility-anchor"></span>
+<span id="signature_1-typescript" class="compatibility-anchor"></span>
+<span id="signature_1-net" class="compatibility-anchor"></span>
+<span id="inputs_1" class="compatibility-anchor"></span>
+<span id="input-properties_1" class="compatibility-anchor"></span>
+<span id="returns_1" class="compatibility-anchor"></span>
+<span id="returns_1-typescript" class="compatibility-anchor"></span>
+<span id="returns_1-net" class="compatibility-anchor"></span>
+<span id="return-properties_1" class="compatibility-anchor"></span>
+<span id="return-properties_1-typescript" class="compatibility-anchor"></span>
+<span id="return-properties_1-net" class="compatibility-anchor"></span>
+<span id="expected-results_1" class="compatibility-anchor"></span>
+<span id="potential-errors_1" class="compatibility-anchor"></span>
+<span id="example_1" class="compatibility-anchor"></span>
+<span id="example_1-typescript" class="compatibility-anchor"></span>
+<span id="example_1-net" class="compatibility-anchor"></span>
 
-#### Signature
+Create the Subscrio tables and initial configuration. A supplied administrator passphrase is hashed and stored only if no hash exists; installation never replaces an existing hash. Use migration to upgrade an existing schema.
 
-=== "TypeScript"
-    ```typescript
-    migrate(): Promise<number>
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== ".NET"
-    ```csharp
-    Task<int> MigrateAsync()
-    ```
+<div class="signature" markdown="1">
 
-#### Inputs
+```typescript
+installSchema(adminPassphrase?: string): Promise<void>
+```
 
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| _None_ |  |  |  |
+</div>
 
-#### Input Properties
+**Parameters**
 
-- None.
+- `adminPassphrase`: Optional passphrase. The argument takes precedence over the constructor setting; when omitted, the configured passphrase is used.
 
-#### Returns
+**Returns** No returned value.
 
-=== "TypeScript"
-    `Promise<number>` – resolves to the number of migrations applied.
+**Example**
 
-=== ".NET"
-    `Task<int>` – resolves to the number of migrations applied.
+```typescript
+await subscrio.installSchema();
+```
 
-#### Return Properties
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
 
-=== "TypeScript"
-    - `number` – count of migrations that were applied (0 if database is up to date).
+- `ValidationError`: The installed schema is newer than the library.
 
-=== ".NET"
-    - `int` – count of migrations that were applied (0 if database is up to date).
+</details>
 
-#### Expected Results
+</div>
 
-- Checks current schema version from `system_config`.
-- Runs only pending migrations (those with version numbers greater than current).
-- Updates `schema_version` in `system_config` after each migration.
-- Returns count of migrations applied.
+<div class="language-content" data-lang="net" markdown="1">
 
-#### Potential Errors
+<div class="signature" markdown="1">
 
-| Error | When |
+```csharp
+Task InstallSchemaAsync(string? adminPassphrase)
+```
+
+</div>
+
+**Parameters**
+
+- `adminPassphrase`: Optional passphrase. The argument takes precedence over the constructor setting; when omitted, the configured passphrase is used.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+await subscrio.InstallSchemaAsync();
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: The installed schema is newer than the library.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### migrate { #migrate data-method-ts="migrate" data-method-net="MigrateAsync" }
+
+<span id="description_2" class="compatibility-anchor"></span>
+<span id="signature_2" class="compatibility-anchor"></span>
+<span id="signature_2-typescript" class="compatibility-anchor"></span>
+<span id="signature_2-net" class="compatibility-anchor"></span>
+<span id="inputs_2" class="compatibility-anchor"></span>
+<span id="input-properties_2" class="compatibility-anchor"></span>
+<span id="returns_2" class="compatibility-anchor"></span>
+<span id="returns_2-typescript" class="compatibility-anchor"></span>
+<span id="returns_2-net" class="compatibility-anchor"></span>
+<span id="return-properties_2" class="compatibility-anchor"></span>
+<span id="return-properties_2-typescript" class="compatibility-anchor"></span>
+<span id="return-properties_2-net" class="compatibility-anchor"></span>
+<span id="expected-results_2" class="compatibility-anchor"></span>
+<span id="potential-errors_2" class="compatibility-anchor"></span>
+<span id="example_2" class="compatibility-anchor"></span>
+<span id="example_2-typescript" class="compatibility-anchor"></span>
+<span id="example_2-net" class="compatibility-anchor"></span>
+
+Apply pending schema migrations and save the updated version. Already-applied migrations are skipped. See [Schema Upgrade](upgrading-entitlements.md) before upgrading an existing database.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+migrate(): Promise<number>
+```
+
+</div>
+
+**Returns** `number`: Number of migrations applied, or zero when already current.
+
+**Example**
+
+```typescript
+const applied = await subscrio.migrate();
+console.log(applied);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationError`: The installed schema is newer than the library.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<int> MigrateAsync()
+```
+
+</div>
+
+**Returns** `int`: Number of migrations applied, or zero when already current.
+
+**Example**
+
+```csharp
+var applied = await subscrio.MigrateAsync();
+Console.WriteLine(applied);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: The installed schema is newer than the library.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### verifySchema { #verifyschema data-method-ts="verifySchema" data-method-net="VerifySchemaAsync" }
+
+<span id="description_3" class="compatibility-anchor"></span>
+<span id="signature_3" class="compatibility-anchor"></span>
+<span id="signature_3-typescript" class="compatibility-anchor"></span>
+<span id="signature_3-net" class="compatibility-anchor"></span>
+<span id="inputs_3" class="compatibility-anchor"></span>
+<span id="input-properties_3" class="compatibility-anchor"></span>
+<span id="returns_3" class="compatibility-anchor"></span>
+<span id="returns_3-typescript" class="compatibility-anchor"></span>
+<span id="returns_3-net" class="compatibility-anchor"></span>
+<span id="return-properties_3" class="compatibility-anchor"></span>
+<span id="return-properties_3-typescript" class="compatibility-anchor"></span>
+<span id="return-properties_3-net" class="compatibility-anchor"></span>
+<span id="expected-results_3" class="compatibility-anchor"></span>
+<span id="potential-errors_3" class="compatibility-anchor"></span>
+<span id="example_3" class="compatibility-anchor"></span>
+<span id="example_3-typescript" class="compatibility-anchor"></span>
+<span id="example_3-net" class="compatibility-anchor"></span>
+
+Read the stored schema version to determine whether installation or migration is needed. Unexpected database failures propagate to the caller.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+verifySchema(): Promise<string | null>
+```
+
+</div>
+
+**Returns** `string | null`: Installed version, or null when the schema or version is missing.
+
+**Example**
+
+```typescript
+const version = await subscrio.verifySchema();
+console.log(version);
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<string?> VerifySchemaAsync()
+```
+
+</div>
+
+**Returns** `string?`: Installed version, or null when the schema or version is missing.
+
+**Example**
+
+```csharp
+var version = await subscrio.VerifySchemaAsync();
+Console.WriteLine(version);
+```
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### runInitialConfigSync { #runinitialconfigsync data-method-ts="runInitialConfigSync" data-method-net="RunInitialConfigSyncAsync" }
+
+<span id="description_4" class="compatibility-anchor"></span>
+<span id="signature_4" class="compatibility-anchor"></span>
+<span id="signature_4-typescript" class="compatibility-anchor"></span>
+<span id="signature_4-net" class="compatibility-anchor"></span>
+<span id="inputs_4" class="compatibility-anchor"></span>
+<span id="returns_4" class="compatibility-anchor"></span>
+<span id="returns_4-typescript" class="compatibility-anchor"></span>
+<span id="returns_4-net" class="compatibility-anchor"></span>
+<span id="expected-results_4" class="compatibility-anchor"></span>
+<span id="potential-errors_4" class="compatibility-anchor"></span>
+<span id="example_4" class="compatibility-anchor"></span>
+<span id="example_4-typescript" class="compatibility-anchor"></span>
+<span id="example_4-net" class="compatibility-anchor"></span>
+
+Apply the file or catalog configuration supplied to the constructor. Call this after schema setup; supplying configuration alone does not run a sync. In .NET, a file path takes precedence over an object, and empty initial-config options return null.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+runInitialConfigSync(): Promise<ConfigSyncReport | null>
+```
+
+</div>
+
+**Returns** <code><a href="../config-sync/#sync-report">ConfigSyncReport</a> | null</code>: Sync results, or null when no initial configuration was supplied.
+
+**Example**
+
+```typescript
+const report = await subscrio.runInitialConfigSync();
+console.log(report);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- Errors from [configuration sync](config-sync.md) and file access propagate to the caller.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<ConfigSyncReport?> RunInitialConfigSyncAsync()
+```
+
+</div>
+
+**Returns** <code><a href="../config-sync/#sync-report">ConfigSyncReport</a>?</code>: Sync results, or null when no initial configuration was supplied.
+
+**Example**
+
+```csharp
+var report = await subscrio.RunInitialConfigSyncAsync();
+Console.WriteLine(report);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- Errors from [configuration sync](config-sync.md) and file access propagate to the caller.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### dropSchema { #dropschema data-method-ts="dropSchema" data-method-net="DropSchemaAsync" }
+
+<span id="description_5" class="compatibility-anchor"></span>
+<span id="signature_5" class="compatibility-anchor"></span>
+<span id="signature_5-typescript" class="compatibility-anchor"></span>
+<span id="signature_5-net" class="compatibility-anchor"></span>
+<span id="inputs_5" class="compatibility-anchor"></span>
+<span id="input-properties_4" class="compatibility-anchor"></span>
+<span id="returns_5" class="compatibility-anchor"></span>
+<span id="returns_5-typescript" class="compatibility-anchor"></span>
+<span id="returns_5-net" class="compatibility-anchor"></span>
+<span id="return-properties_4" class="compatibility-anchor"></span>
+<span id="return-properties_4-typescript" class="compatibility-anchor"></span>
+<span id="return-properties_4-net" class="compatibility-anchor"></span>
+<span id="expected-results_5" class="compatibility-anchor"></span>
+<span id="potential-errors_5" class="compatibility-anchor"></span>
+<span id="example_5" class="compatibility-anchor"></span>
+<span id="example_5-typescript" class="compatibility-anchor"></span>
+<span id="example_5-net" class="compatibility-anchor"></span>
+
+Permanently remove all Subscrio tables and their data. If an administrator passphrase hash is stored, a matching passphrase is required. Without a stored hash, this operation does not require a passphrase.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+dropSchema(adminPassphrase?: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `adminPassphrase`: Optional passphrase. The argument takes precedence over the constructor setting; when omitted, the configured passphrase is used.
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+// Run only against a disposable database.
+await subscrio.dropSchema(process.env.ADMIN_PASSPHRASE);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationError`: A stored passphrase hash exists and the supplied passphrase is missing or incorrect.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task DropSchemaAsync(string? adminPassphrase)
+```
+
+</div>
+
+**Parameters**
+
+- `adminPassphrase`: Optional passphrase. The argument takes precedence over the constructor setting; when omitted, the configured passphrase is used.
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+// Run only against a disposable database.
+await subscrio.DropSchemaAsync(
+    Environment.GetEnvironmentVariable("ADMIN_PASSPHRASE"));
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: A stored passphrase hash exists and the supplied passphrase is missing or incorrect.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### close { #close data-method-ts="close" data-method-net="Dispose" }
+
+<span id="description_6" class="compatibility-anchor"></span>
+<span id="signature_6" class="compatibility-anchor"></span>
+<span id="signature_6-typescript" class="compatibility-anchor"></span>
+<span id="signature_6-net" class="compatibility-anchor"></span>
+<span id="inputs_6" class="compatibility-anchor"></span>
+<span id="input-properties_5" class="compatibility-anchor"></span>
+<span id="returns_6" class="compatibility-anchor"></span>
+<span id="returns_6-typescript" class="compatibility-anchor"></span>
+<span id="returns_6-net" class="compatibility-anchor"></span>
+<span id="return-properties_5" class="compatibility-anchor"></span>
+<span id="return-properties_5-typescript" class="compatibility-anchor"></span>
+<span id="return-properties_5-net" class="compatibility-anchor"></span>
+<span id="expected-results_6" class="compatibility-anchor"></span>
+<span id="potential-errors_6" class="compatibility-anchor"></span>
+<span id="example_6" class="compatibility-anchor"></span>
+<span id="example_6-typescript" class="compatibility-anchor"></span>
+<span id="example_6-net" class="compatibility-anchor"></span>
+<span id="supported-public-surface" class="compatibility-anchor"></span>
+<span id="additional-reference-guides" class="compatibility-anchor"></span>
+<span id="add-ons-metering-and-credits" class="compatibility-anchor"></span>
+
+Release database resources when the application finishes using Subscrio. TypeScript closes the shared PostgreSQL pool. In .NET, `using` and dependency-injection scopes can dispose the instance automatically.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+close(): Promise<void>
+```
+
+</div>
+
+**Returns** No returned value.
+
+**Example**
+
+```typescript
+await subscrio.close();
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+void Dispose()
+```
+
+</div>
+
+**Returns** No returned value.
+
+**Example**
+
+```csharp
+subscrio.Dispose();
+```
+
+</div>
+
+</div>
+
+## Data types
+
+For input types, Required means the caller must supply the property. Defaults apply when an optional property is omitted.
+
+<div class="data-type" markdown="1">
+
+### SubscrioConfig { #SubscrioConfig }
+
+<span id="configuration-object" class="compatibility-anchor"></span>
+
+Constructor configuration. Only the database connection is required.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `database` | <code><a href="#DatabaseConfig">DatabaseConfig</a></code> | Yes | None | Database connection and provider settings. |
+| `adminPassphrase` | <code>string</code> | No | None | Default passphrase for schema installation and deletion. |
+| `stripe` | <code><a href="#StripeConfig">StripeConfig</a></code> | No | None | Stripe API and webhook credentials. |
+| `logging` | <code><a href="#LoggingConfig">LoggingConfig</a></code> | No | None | Reserved logging configuration; currently does not control emitted diagnostics. |
+| `initialConfig` | <code><a href="#InitialConfigSync">InitialConfigSync</a></code> | No | None | Catalog configuration applied by the initial-config method. |
+| `hooks` | <code><a href="../hooks/#config-time-registration">HooksConfig</a></code> | No | None | Hook handlers registered during construction. See [Hooks](hooks.md). |
+| `clock` | <code><a href="#Clock">Clock</a></code> | No | System clock | Clock used for usage periods, credits, and time-based decisions. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Database` | <code><a href="#DatabaseConfig">DatabaseConfig</a></code> | Yes | None | Database connection and provider settings. |
+| `AdminPassphrase` | <code>string?</code> | No | null | Default passphrase for schema installation and deletion. |
+| `Stripe` | <code><a href="#StripeConfig">StripeConfig</a>?</code> | No | null | Stripe API and webhook credentials. |
+| `Logging` | <code><a href="#LoggingConfig">LoggingConfig</a>?</code> | No | null | Reserved logging configuration; currently does not control emitted diagnostics. |
+| `InitialConfig` | <code><a href="#InitialConfigSync">InitialConfigOptions</a>?</code> | No | null | Catalog configuration applied by the initial-config method. |
+| `Hooks` | <code><a href="../hooks/#config-time-registration">SubscrioHooksOptions</a>?</code> | No | null | Hook handlers registered during construction. See [Hooks](hooks.md). |
+| `Clock` | <code><a href="#Clock">IClock</a>?</code> | No | System clock | Clock used for usage periods, credits, and time-based decisions. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### DatabaseConfig { #DatabaseConfig }
+
+<span id="database-object" class="compatibility-anchor"></span>
+
+Database connection settings. In TypeScript, this is the nested `SubscrioConfig["database"]` object.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `connectionString` | `string` | Yes | None | PostgreSQL connection URI. |
+| `ssl` | `boolean` | No | Unset | When true, enables TLS and certificate verification. |
+| `poolSize` | `number` | No | 10 | Maximum PostgreSQL pool size. |
+| `databaseType` | <code>&#x27;postgres&#x27; &#124; &#x27;sqlserver&#x27;</code> | No | Detected | Dialect hint; selecting SQL Server throws at construction. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `ConnectionString` | `string` | Yes | None | PostgreSQL or SQL Server provider connection string. |
+| `Ssl` | `bool` | No | false | Enables the provider SSL settings. |
+| `PoolSize` | `int` | No | 10 | Configuration hint; currently not applied by the .NET initializer. Configure pooling in the connection string. |
+| `DatabaseType` | `DatabaseType` | No | PostgreSQL | Provider: PostgreSQL or SqlServer, from `Subscrio.Core.Domain.ValueObjects`. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### StripeConfig { #StripeConfig }
+
+<span id="stripe-object" class="compatibility-anchor"></span>
+
+Optional Stripe configuration. See [Stripe Integration](stripe-integration.md) for event verification and checkout.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `secretKey` | `string` | Yes | None | Secret API key. |
+| `webhookSecret` | `string` | No | None | Endpoint signing secret required to verify incoming webhooks. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `SecretKey` | `string` | Yes | None | Secret API key. |
+| `WebhookSecret` | `string?` | No | null | Endpoint signing secret required by `ConstructStripeEvent`. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### LoggingConfig { #LoggingConfig }
+
+<span id="logging-object" class="compatibility-anchor"></span>
+
+Reserved logging settings. The current library does not emit or filter diagnostics using this configuration.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `level` | <code>&#x27;debug&#x27; &#124; &#x27;info&#x27; &#124; &#x27;warn&#x27; &#124; &#x27;error&#x27;</code> | Yes | None | Reserved level value. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Level` | `LogLevel` | No | Info | Debug, Info, Warn, or Error. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### InitialConfigSync { #InitialConfigSync data-method-ts="InitialConfigSync" data-method-net="InitialConfigOptions" }
+
+<span id="initialconfig-initialconfig" class="compatibility-anchor"></span>
+
+Configuration applied by the initial-config method after schema setup. In TypeScript, supply either the file variant or the JSON variant.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `type` | <code>&#x27;file&#x27; &#124; &#x27;json&#x27;</code> | Yes | None | Selects a local file or an in-memory catalog. |
+| `filePath` | `string` | When file | None | JSON file to read. |
+| `config` | [ConfigSyncDto](config-sync.md#ConfigSyncDto) | When json | None | Catalog to synchronize. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `FilePath` | `string?` | No | null | JSON file to read; takes precedence when nonblank. |
+| `Config` | [ConfigSyncDto](config-sync.md#ConfigSyncDto) | No | null | Catalog to synchronize when no file path is supplied. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### Clock { #Clock data-method-ts="Clock" data-method-net="IClock" }
+
+Optional time provider for deterministic application behavior and tests.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `now()` | `() => Date` | Yes | None | Returns the current time. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `UtcNow` | `DateTime` | Yes | None | Read-only current UTC time, from `Subscrio.Core.Application.DTOs.IClock`. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### Subscrio objects { #reference-index }
+
+The instance exposes the following objects. Use these public access paths rather than constructing their implementation classes.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Property | Purpose |
 | --- | --- |
-| `ConfigurationError` | Database connection unavailable or migration fails. |
+| [`features`](features.md) | Define reusable features. |
+| [`addons`](addons.md) | Define optional subscription packages. |
+| [`products`](products.md) | Group features and plans. |
+| [`plans`](plans.md) | Define subscription offerings and feature values. |
+| [`billingCycles`](billing-cycles.md) | Define billing cadence. |
+| [`customers`](customers.md) | Manage customer records. |
+| [`subscriptions`](subscriptions.md) | Manage subscriptions, overrides, and add-on attachments. |
+| [`featureChecker`](feature-checker.md) | Resolve feature access. |
+| [`metering`](metering.md) | Record usage against feature limits. |
+| [`credits`](credits.md) | Manage credit wallets and spending. |
+| [`hooks`](hooks.md) | Register operation callbacks. |
+| [`configSync`](config-sync.md) | Synchronize catalog configuration. |
+| [`stripe`](stripe-integration.md) | Process Stripe events and create checkout sessions. |
 
-#### Example
+</div>
 
-=== "TypeScript"
-    ```typescript
-    const migrationsApplied = await subscrio.migrate();
-    if (migrationsApplied > 0) {
-      console.log(`Applied ${migrationsApplied} migration(s)`);
-    } else {
-      console.log('Database is up to date');
-    }
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-    Or via CLI after installing the package: `npx subscrio-migrate`
-
-=== ".NET"
-    ```csharp
-    var migrationsApplied = await subscrio.MigrateAsync();
-    if (migrationsApplied > 0)
-    {
-        Console.WriteLine($"Applied {migrationsApplied} migration(s)");
-    }
-    else
-    {
-        Console.WriteLine("Database is up to date");
-    }
-    ```
-
-### verifySchema
-
-#### Description
- Confirms whether the Subscrio schema is already installed and returns the current schema version. Returns `null` if the schema is not installed, allowing callers to decide whether to run `installSchema()` or proceed with normal operations.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    verifySchema(): Promise<string | null>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task<string?> VerifySchemaAsync()
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| _None_ |  |  |  |
-
-#### Input Properties
-
-- None.
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<string | null>` – resolves to the current schema version (e.g., `"1.1.0"`) when installed, or `null` if not installed.
-
-=== ".NET"
-    `Task<string?>` – resolves to the current schema version (e.g., `"1.1.0"`) when installed, or `null` if not installed.
-
-#### Return Properties
-
-=== "TypeScript"
-    - `string | null` – the schema version string if installed, or `null` if not installed.
-
-=== ".NET"
-    - `string?` – the schema version string if installed, or `null` if not installed.
-
-#### Expected Results
-
-- Executes lightweight checks on required tables and indexes via the schema installer.
-- If schema exists, retrieves and returns the current schema version from `system_config`.
-- Returns `null` if schema is not installed or version cannot be determined.
-
-#### Potential Errors
-
-| Error | When |
+| Property | Purpose |
 | --- | --- |
-| `ConfigurationError` | Database connection is unavailable. |
+| [`Features`](features.md) | Define reusable features. |
+| [`Addons`](addons.md) | Define optional subscription packages. |
+| [`Products`](products.md) | Group features and plans. |
+| [`Plans`](plans.md) | Define subscription offerings and feature values. |
+| [`BillingCycles`](billing-cycles.md) | Define billing cadence. |
+| [`Customers`](customers.md) | Manage customer records. |
+| [`Subscriptions`](subscriptions.md) | Manage subscriptions, overrides, and add-on attachments. |
+| [`FeatureChecker`](feature-checker.md) | Resolve feature access. |
+| [`Metering`](metering.md) | Record usage against feature limits. |
+| [`Credits`](credits.md) | Manage credit wallets and spending. |
+| [`Hooks`](hooks.md) | Register operation callbacks. |
+| [`ConfigSync`](config-sync.md) | Synchronize catalog configuration. |
+| [`Stripe`](stripe-integration.md) | Process Stripe events and create checkout sessions. |
 
-#### Example
+</div>
 
-=== "TypeScript"
-    ```typescript
-    const version = await subscrio.verifySchema();
-    if (version === null) {
-      console.warn('Subscrio schema missing – run installSchema() first.');
-    } else {
-      console.log(`Schema version: ${version}`);
-    }
-    ```
+</div>
 
-=== ".NET"
-    ```csharp
-    var version = await subscrio.VerifySchemaAsync();
-    if (version == null)
-    {
-        Console.WriteLine("Subscrio schema missing – run InstallSchemaAsync() first.");
-    }
-    else
-    {
-        Console.WriteLine($"Schema version: {version}");
-    }
-    ```
+The supported application surface includes these objects, their configuration and DTO types, public errors, hooks, and related enums. Lower-level exports such as repositories and persistence records are not stable application contracts. The supported TypeScript conversion helper is documented under [Feature Checker](feature-checker.md).
 
-### dropSchema
+## Related guides
 
-#### Description
- Removes every table created by Subscrio. Intended for local development resets or automated tests.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    dropSchema(): Promise<void>
-    ```
-
-=== ".NET"
-    ```csharp
-    Task DropSchemaAsync()
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| _None_ |  |  |  |
-
-#### Input Properties
-
-- None.
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<void>` – resolves after the installer drops all managed tables.
-
-=== ".NET"
-    `Task` – completes after the installer drops all managed tables.
-
-#### Return Properties
-
-=== "TypeScript"
-    - `void`
-
-=== ".NET"
-    - None
-
-#### Expected Results
-
-- Drops every Subscrio-owned table via the installer. This is destructive and meant for local resets/tests.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `ConfigurationError` | Database refuses the drop (permissions, locks). |
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    if (process.env.NODE_ENV === 'test') {
-      await subscrio.dropSchema();
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing")
-    {
-        await subscrio.DropSchemaAsync();
-    }
-    ```
-
-### close
-
-#### Description
- Closes the shared database connection pool so the process can exit cleanly.
-
-#### Signature
-
-=== "TypeScript"
-    ```typescript
-    close(): Promise<void>
-    ```
-
-=== ".NET"
-    ```csharp
-    void Dispose()
-    ```
-
-#### Inputs
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| _None_ |  |  |  |
-
-#### Input Properties
-
-- None.
-
-#### Returns
-
-=== "TypeScript"
-    `Promise<void>` – resolves after all connections are closed.
-
-=== ".NET"
-    `void` – `Dispose()` is synchronous. Use `using var subscrio = new Subscrio(config);` or call `Dispose()` when finished.
-
-#### Return Properties
-
-=== "TypeScript"
-    - `void`
-
-=== ".NET"
-    - None
-
-#### Expected Results
-
-- Closes database connections and releases resources.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `ConfigurationError` | Database connection has already been torn down unexpectedly. |
-
-#### Example
-
-=== "TypeScript"
-    ```typescript
-    await subscrio.close();
-    ```
-
-=== ".NET"
-    ```csharp
-    subscrio.Dispose();
-    // Or: using var subscrio = new Subscrio(config);
-    ```
-
----
-
-## Service Reference Index
-
-All service-level documentation now lives in dedicated markdown files so each method, DTO, error, and example can be described in depth. The following table shows where to find those references:
-
-| Service | Scope | Reference |
-| --- | --- | --- |
-| ProductManagementService | Product CRUD, feature associations | [`products.md`](./products.md) |
-| FeatureManagementService | Global feature definitions | [`features.md`](./features.md) |
-| PlanManagementService | Plans, feature values, transitions | [`plans.md`](./plans.md) |
-| BillingCycleManagementService | Billing cadence + price mappings | [`billing-cycles.md`](./billing-cycles.md) |
-| CustomerManagementService | Customer lifecycle | [`customers.md`](./customers.md) |
-| SubscriptionManagementService | Subscriptions, overrides, batch jobs | [`subscriptions.md`](./subscriptions.md) |
-| FeatureCheckerService | Runtime feature resolution APIs | [`feature-checker.md`](./feature-checker.md) |
-| ConfigSyncService | Catalog sync from JSON file or `ConfigSyncDto` | [`config-sync.md`](./config-sync.md) |
-| StripeIntegrationService | Stripe webhook processing & checkout helpers | [`stripe-integration.md`](./stripe-integration.md) |
-| Hooks | Before/after customer/subscription hooks + `stripe.received.before` / `.after` | [`hooks.md`](./hooks.md) |
-
-> Every service doc follows a standard structure that standardizes sections for usage, inputs/outputs, DTOs, expected results, errors, and working examples.
-
-## Additional Reference Guides
-
-- `hooks.md` documents the before/after hook catalog, payloads, mutation rules, and registration API.
-- `how-to-extend.md` covers the first-party audit-log and payments packages and how to package your own extensions.
-- `subscriptions.md` covers CRUD APIs, DTOs, overrides, and lifecycle automation APIs.
-- `subscription-lifecycle.md` fully documents how each status is calculated (with diagrams) and how transitions work.
-- `relationships.md` centralizes the product/plan/feature/billing-cycle/customer relationships, the feature resolution hierarchy, and the customer key conventions.
-- `products.md`, `plans.md`, `features.md`, and `billing-cycles.md` document CRUD flows, DTOs, and association helpers for each domain surface.
-- `feature-checker.md` explains the subscription override → plan value → feature default resolution order in depth.
-- `customers.md` details how caller-supplied customer keys map to internal IDs and where they are required.
-- [Configuration Sync](config-sync.md) documents catalog sync from a JSON file or `ConfigSyncDto`.
-- [Stripe Integration](stripe-integration.md) contains the full Stripe API, including where signature verification must happen before calling `processStripeEvent()`.
+- [Getting Started](getting-started.md): installation and application setup.
+- [How Subscrio Works](entitlements-guide.md): choose between overrides, add-ons, usage limits, and credits.
+- [Schema Upgrade](upgrading-entitlements.md): migrate existing databases.
+- [Extending Subscrio](how-to-extend.md): integrate additional packages.

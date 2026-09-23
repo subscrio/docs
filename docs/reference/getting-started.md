@@ -1,372 +1,198 @@
 ---
-title: Getting started
-description: Install Subscrio for TypeScript or .NET, create a small entitlement catalog, assign a customer subscription, and resolve feature access from your database.
+title: Getting Started
+description: Install Subscrio and run a complete plan-based feature check in TypeScript or .NET.
 ---
 
-# Getting Started with Subscrio
+# Getting Started
 
-This guide installs the library, defines a small entitlement catalog, assigns a customer subscription, and resolves feature access.
+Create a feature, give it a value on a plan, and assign that plan to a customer. The example below returns a project limit of 10.
 
-## Prerequisites
+<span id="getting-started-with-subscrio"></span>
+<span id="prerequisites"></span>
+<span id="step-1-initialize-subscrio"></span>
+<span id="running-migrations"></span>
+<span id="step-2-define-features"></span>
+<span id="step-3-create-product-plan-and-billing-cycle"></span>
+<span id="step-4-onboard-a-customer"></span>
+<span id="step-5-issue-a-subscription"></span>
+<span id="step-6-verify-feature-access"></span>
+<span id="where-to-go-next"></span>
+<span id="understand-and-extend-the-entitlement-model"></span>
 
-- An existing database: PostgreSQL for TypeScript, or PostgreSQL or SQL Server for .NET.
+## Install and connect
 
-=== "TypeScript"
-    Install the published package in your application:
+Use a development database with no conflicting example keys. Schema installation creates Subscrio's tables, but does not create the database itself. Catalog creation is not an upsert: running this example again against the same records raises duplicate-key errors.
 
-    ```bash
-    npm install subscrio
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-    Make the database connection string available through your application's private configuration.
+Use Node.js 20.19 or newer and PostgreSQL. Install the library and a TypeScript runner:
 
-=== ".NET"
-    Add the published package to a .NET 8, 9, or 10 project:
+```bash
+npm install subscrio
+npm install --save-dev typescript tsx
+```
 
-    ```bash
-    dotnet add package Subscrio.Core
-    ```
+Set `DATABASE_URL` to your private PostgreSQL connection URI. Save the example as `getting-started.ts` in an ESM project and run `npx tsx getting-started.ts`.
 
-    Set `DATABASE_URL` and, when using SQL Server, set `DATABASE_TYPE=sqlserver`. You can also construct `SubscrioConfig` from your existing application configuration.
-## Step 1 – Initialize Subscrio
+</div>
 
-=== "TypeScript"
-    Create a file such as `scripts/bootstrap.ts`:
+<div class="language-content" data-lang="net" markdown="1">
 
-    ```typescript
-    import { Subscrio } from 'subscrio';
-    import { loadConfig } from 'subscrio/config';
+Use a .NET 8, 9, or 10 console application with PostgreSQL or SQL Server:
 
-    async function main() {
-      const config = loadConfig();
-      const subscrio = new Subscrio(config);
+```bash
+dotnet add package Subscrio.Core
+```
 
-      // Check if schema exists
-      const schemaVersion = await subscrio.verifySchema();
-      if (schemaVersion === null) {
-        await subscrio.installSchema();
-        console.log('Schema installed.');
-      } else {
-        console.log(`Schema version: ${schemaVersion}`);
-        const migrationsApplied = await subscrio.migrate();
-        if (migrationsApplied > 0) {
-          console.log(`Applied ${migrationsApplied} migration(s).`);
-        }
-      }
-      
-      console.log('Ready to use Subscrio services.');
-    }
+For this example, set `DATABASE_URL` to an Npgsql connection string, put the code in `Program.cs`, and run `dotnet run`. For SQL Server, use its connection string and set `DatabaseType = "sqlserver"` on `DatabaseConfig`.
 
-    main().catch((error) => {
-      console.error(error);
-      process.exit(1);
-    });
-    ```
+</div>
 
-    Run with `ts-node` or compile to JavaScript.
+Keep database credentials on the server. Review [Schema Upgrade](upgrading-entitlements.md) before running migration against an existing deployment.
 
-=== ".NET"
-    Create a bootstrap method:
+## Create a catalog and check a limit
 
-    ```csharp
-    using Subscrio.Core;
-    using Subscrio.Core.Application.DTOs;
-    using Subscrio.Core.Config;
-    using Subscrio.Core.Domain.ValueObjects;
+<div class="language-content" data-lang="ts" markdown="1">
 
-    var config = ConfigLoader.LoadConfig();
-    using var subscrio = new Subscrio(config);
+```typescript
+import { Subscrio } from 'subscrio';
 
-    var schemaVersion = await subscrio.VerifySchemaAsync();
-    if (schemaVersion == null)
+const subscrio = new Subscrio({
+  database: { connectionString: process.env.DATABASE_URL! }
+});
+try {
+  if (await subscrio.verifySchema() === null) await subscrio.installSchema();
+  else await subscrio.migrate();
+
+  await subscrio.features.createFeature({
+    key: 'max-projects', displayName: 'Projects', valueType: 'numeric', defaultValue: '0'
+  });
+  await subscrio.products.createProduct({ key: 'projecthub', displayName: 'ProjectHub' });
+  await subscrio.products.associateFeature('projecthub', 'max-projects');
+  await subscrio.plans.createPlan({
+    key: 'starter', productKey: 'projecthub', displayName: 'Starter'
+  });
+  await subscrio.plans.setFeatureValue('starter', 'max-projects', '10');
+  await subscrio.billingCycles.createBillingCycle({
+    key: 'starter-monthly', planKey: 'starter', displayName: 'Monthly',
+    durationUnit: 'months', durationValue: 1
+  });
+  await subscrio.customers.createCustomer({ key: 'acme', displayName: 'Acme' });
+  await subscrio.subscriptions.createSubscription({
+    key: 'acme-starter', customerKey: 'acme', billingCycleKey: 'starter-monthly'
+  });
+  const limit = await subscrio.featureChecker.getValueForCustomer(
+    'acme', 'projecthub', 'max-projects', 0
+  );
+  console.log(limit); // 10
+} finally {
+  await subscrio.close();
+}
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+```csharp
+using Subscrio.Core;
+using Subscrio.Core.Config;
+using Subscrio.Core.Application.DTOs;
+
+using var subscrio = new Subscrio.Core.Subscrio(new SubscrioConfig
+{
+    Database = new DatabaseConfig
     {
-        await subscrio.InstallSchemaAsync();
-        Console.WriteLine("Schema installed.");
+        ConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL")!
     }
-    else
+});
+if (await subscrio.VerifySchemaAsync() is null) await subscrio.InstallSchemaAsync();
+else await subscrio.MigrateAsync();
+
+await subscrio.Features.CreateFeatureAsync(new CreateFeatureDto(
+    Key: "max-projects", DisplayName: "Projects", ValueType: "numeric", DefaultValue: "0"));
+await subscrio.Products.CreateProductAsync(new CreateProductDto("projecthub", "ProjectHub"));
+await subscrio.Products.AssociateFeatureAsync("projecthub", "max-projects");
+await subscrio.Plans.CreatePlanAsync(new CreatePlanDto("projecthub", "starter", "Starter"));
+await subscrio.Plans.SetFeatureValueAsync("starter", "max-projects", "10");
+await subscrio.BillingCycles.CreateBillingCycleAsync(new CreateBillingCycleDto(
+    PlanKey: "starter", Key: "starter-monthly", DisplayName: "Monthly",
+    DurationValue: 1, DurationUnit: "months"));
+await subscrio.Customers.CreateCustomerAsync(new CreateCustomerDto("acme", "Acme"));
+await subscrio.Subscriptions.CreateSubscriptionAsync(new CreateSubscriptionDto(
+    CustomerKey: "acme", BillingCycleKey: "starter-monthly", Key: "acme-starter"));
+var limit = await subscrio.FeatureChecker.GetValueForCustomerAsync<int>(
+    "acme", "projecthub", "max-projects", 0);
+Console.WriteLine(limit); // 10
+```
+
+</div>
+
+## Understand the result
+
+The feature default is zero. The Starter plan replaces it with 10, and Acme's subscription selects that plan through its monthly billing cycle. The numeric getter returns 10. It does not count existing projects or prevent your application from creating another one.
+
+In TypeScript, passing the numeric fallback `0` selects numeric conversion; a generic type argument alone does not change runtime conversion. In .NET, the generic target type selects the conversion. See [Feature Checker](feature-checker.md) for missing-record behavior and other conversions.
+
+Billing-cycle dates describe a subscription period. Subscrio does not charge the customer or automatically advance those dates. Your billing integration maintains them.
+
+## Updating existing records { #partial-updates }
+
+Methods that link to this convention change supplied properties while retaining omitted properties. For example, changing a feature's default value leaves its name and description unchanged. This applies only to methods that explicitly reference the convention.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+Leave a property out or pass `undefined` to keep its current value. Explicit `null` may be rejected or may clear a value, depending on the method and field.
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+For update DTOs that use nullable properties to represent omission, leaving a property at its default `null` keeps the saved value. That `null` does not clear the value. Some methods provide explicit flags for clearing a field.
+
+</div>
+
+Partial updates do not imply that nested objects are merged. The owning method documents replacement or patch behavior, empty collections, and restrictions after usage or credit activity. Configuration sync has its own [replacement rules](managing-configuration.md#understand-what-sync-replaces).
+
+## Use dependency injection in .NET
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+TypeScript applications manage the instance directly as shown above. The following container registration is specific to .NET.
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+Register a scoped instance in an ASP.NET application's service collection. This complete container example uses the database initialized above; registration itself does not install the schema or apply configuration.
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+using Subscrio.Core.DependencyInjection;
+
+var services = new ServiceCollection();
+services.AddSubscrio(new SubscrioConfig
+{
+    Database = new DatabaseConfig
     {
-        Console.WriteLine($"Schema version: {schemaVersion}");
-        var migrationsApplied = await subscrio.MigrateAsync();
-        if (migrationsApplied > 0)
-        {
-            Console.WriteLine($"Applied {migrationsApplied} migration(s).");
-        }
+        ConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL")!
     }
+}, ServiceLifetime.Scoped);
+using var provider = services.BuildServiceProvider();
+using var scope = provider.CreateScope();
+var scopedSubscrio = scope.ServiceProvider.GetRequiredService<Subscrio.Core.Subscrio>();
+Console.WriteLine(await scopedSubscrio.VerifySchemaAsync());
+```
 
-    Console.WriteLine("Ready to use Subscrio services.");
-    ```
+In an ASP.NET application, register on `builder.Services`; the request scope handles disposal. See [Subscrio](core-overview.md) for configuration properties.
 
-    Use `using` or call `Dispose()` when the application is done with a manually created instance.
+</div>
 
-    **Using dependency injection:** ASP.NET applications can register Subscrio once per request scope:
+## Continue with your application
 
-    ```csharp
-    using Subscrio.Core.Config;
-    using Subscrio.Core.DependencyInjection;
+Keep an instance alive for the application work that needs it, and close or dispose it when finished. For the full configuration and object list, see [Subscrio](core-overview.md).
 
-    var config = ConfigLoader.LoadConfig();
-    builder.Services.AddSubscrio(config, ServiceLifetime.Scoped);
-    ```
-
-    Then inject `Subscrio` through a constructor or handler parameter. Use `ServiceLifetime.Scoped` for ASP.NET request scopes. Other .NET applications can create and manage a `Subscrio` instance directly. Build `SubscrioConfig` with `ConfigLoader.LoadConfig()` or from your existing application configuration. See [Core Overview](core-overview.md) for the constructor and config reference.
-
-### Running Migrations
-
-When you update the Subscrio package, you may need to run migrations to update your database schema. The migration system tracks schema versions in the `system_config` table and only applies pending migrations, so it's safe to run multiple times. You can run migrations programmatically:
-
-=== "TypeScript"
-    ```typescript
-    const migrationsApplied = await subscrio.migrate();
-    ```
-
-    Or via CLI after installing the package: `npx subscrio-migrate`
-
-=== ".NET"
-    ```csharp
-    var migrationsApplied = await subscrio.MigrateAsync();
-    ```
-
-## Step 2 – Define Features
-
-Features are global definitions with typed defaults. Plans and subscriptions draw from them later.
-
-> **Tip:** Define *all* keys—products, plans, billing cycles, features—as constants or in a shared module so both backend and admin UI reference the same strings. This prevents typos and makes refactors safer.
-
-=== "TypeScript"
-    ```typescript
-    const FEATURE_KEYS = {
-      Analytics: 'analytics-dashboard',
-      MaxProjects: 'max-projects'
-    } as const;
-
-    const analyticsFeature = await subscrio.features.createFeature({
-      key: FEATURE_KEYS.Analytics,
-      displayName: 'Analytics Dashboard',
-      valueType: 'toggle',
-      defaultValue: 'false'
-    });
-
-    const maxProjectsFeature = await subscrio.features.createFeature({
-      key: FEATURE_KEYS.MaxProjects,
-      displayName: 'Max Projects',
-      valueType: 'numeric',
-      defaultValue: '3'
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    const string FEATURE_ANALYTICS = "analytics-dashboard";
-    const string FEATURE_MAX_PROJECTS = "max-projects";
-
-    await subscrio.Features.CreateFeatureAsync(new CreateFeatureDto(
-        Key: FEATURE_ANALYTICS,
-        DisplayName: "Analytics Dashboard",
-        ValueType: "toggle",
-        DefaultValue: "false"
-    ));
-
-    await subscrio.Features.CreateFeatureAsync(new CreateFeatureDto(
-        Key: FEATURE_MAX_PROJECTS,
-        DisplayName: "Max Projects",
-        ValueType: "numeric",
-        DefaultValue: "3"
-    ));
-    ```
-
-## Step 3 – Create Product, Plan, and Billing Cycle
-
-Create a product (with a constant key), associate features, define a plan and billing cycle, then set plan feature values:
-
-=== "TypeScript"
-    ```typescript
-    const PRODUCT = 'projecthub';
-
-    const product = await subscrio.products.createProduct({
-      key: PRODUCT,
-      displayName: 'ProjectHub',
-      description: 'Project management suite'
-    });
-
-    await subscrio.products.associateFeature(PRODUCT, FEATURE_KEYS.Analytics);
-    await subscrio.products.associateFeature(PRODUCT, FEATURE_KEYS.MaxProjects);
-
-    const PLAN = 'starter';
-
-    await subscrio.plans.createPlan({
-      productKey: PRODUCT,
-      key: PLAN,
-      displayName: 'Starter Plan',
-      description: 'Best for small teams'
-    });
-
-    const BILLING_CYCLE = 'starter-monthly';
-
-    await subscrio.billingCycles.createBillingCycle({
-      planKey: PLAN,
-      key: BILLING_CYCLE,
-      displayName: 'Monthly',
-      durationValue: 1,
-      durationUnit: 'months'
-    });
-
-    await subscrio.plans.setFeatureValue(PLAN, FEATURE_KEYS.Analytics, 'true');
-    await subscrio.plans.setFeatureValue(PLAN, FEATURE_KEYS.MaxProjects, '10');
-    ```
-
-=== ".NET"
-    ```csharp
-    const string PRODUCT = "projecthub";
-
-    var product = await subscrio.Products.CreateProductAsync(new CreateProductDto(
-        Key: PRODUCT,
-        DisplayName: "ProjectHub",
-        Description: "Project management suite"
-    ));
-
-    await subscrio.Products.AssociateFeatureAsync(PRODUCT, FEATURE_ANALYTICS);
-    await subscrio.Products.AssociateFeatureAsync(PRODUCT, FEATURE_MAX_PROJECTS);
-
-    const string PLAN = "starter";
-    const string BILLING_CYCLE = "starter-monthly";
-
-    await subscrio.Plans.CreatePlanAsync(new CreatePlanDto(
-        ProductKey: PRODUCT,
-        Key: PLAN,
-        DisplayName: "Starter Plan",
-        Description: "Best for small teams"
-    ));
-
-    await subscrio.BillingCycles.CreateBillingCycleAsync(new CreateBillingCycleDto(
-        PlanKey: PLAN,
-        Key: BILLING_CYCLE,
-        DisplayName: "Monthly",
-        DurationValue: 1,
-        DurationUnit: "months"
-    ));
-
-    await subscrio.Plans.SetFeatureValueAsync(PLAN, FEATURE_ANALYTICS, "true");
-    await subscrio.Plans.SetFeatureValueAsync(PLAN, FEATURE_MAX_PROJECTS, "10");
-    ```
-
-## Step 4 – Onboard a Customer
-
-=== "TypeScript"
-    ```typescript
-    const customer = await subscrio.customers.createCustomer({
-      key: 'acme-corp',
-      displayName: 'Acme Corporation',
-      email: 'admin@acme.test',
-      externalBillingId: 'cus_123' // optional (Stripe ID, etc.)
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    var customer = await subscrio.Customers.CreateCustomerAsync(new CreateCustomerDto(
-        Key: "acme-corp",
-        DisplayName: "Acme Corporation",
-        Email: "admin@acme.test",
-        ExternalBillingId: "cus_123"  // optional (Stripe ID, etc.)
-    ));
-    ```
-
-## Step 5 – Issue a Subscription
-
-Subscriptions tie the customer to a plan/billing cycle (and optionally contain overrides).
-
-=== "TypeScript"
-    ```typescript
-    const subscription = await subscrio.subscriptions.createSubscription({
-      key: 'acme-subscription',
-      customerKey: customer.key,
-      billingCycleKey: BILLING_CYCLE,
-      trialEndDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    var subscription = await subscrio.Subscriptions.CreateSubscriptionAsync(new CreateSubscriptionDto(
-        Key: "acme-subscription",
-        CustomerKey: customer.Key,
-        BillingCycleKey: BILLING_CYCLE,
-        TrialEndDate: DateTime.UtcNow.AddDays(14)
-    ));
-    ```
-
-Need a temporary override? For example, bump `max-projects` to `20` for a month:
-
-===! "TypeScript"
-    ```typescript
-    import { OverrideType } from 'subscrio';
-
-    await subscrio.subscriptions.addFeatureOverride(
-      subscription.key,
-      FEATURE_KEYS.MaxProjects,
-      '20',
-      OverrideType.Temporary
-    );
-    ```
-
-=== ".NET"
-    ```csharp
-    await subscrio.Subscriptions.AddFeatureOverrideAsync(
-        subscription.Key,
-        FEATURE_MAX_PROJECTS,
-        "20",
-        OverrideType.Temporary
-    );
-    ```
-
-## Step 6 – Verify Feature Access
-
-Use the Feature Checker service to evaluate the final resolved values.
-
-=== "TypeScript"
-    ```typescript
-    const maxProjects = await subscrio.featureChecker.getValueForCustomer(
-      customer.key,
-      PRODUCT,
-      FEATURE_KEYS.MaxProjects,
-      '0'
-    );
-
-    const hasAnalytics = await subscrio.featureChecker.isEnabledForCustomer(
-      customer.key,
-      PRODUCT,
-      FEATURE_KEYS.Analytics
-    );
-
-    console.log({ maxProjects, hasAnalytics });
-    ```
-
-=== ".NET"
-    ```csharp
-    var maxProjects = await subscrio.FeatureChecker.GetValueForCustomerAsync<string>(
-        customer.Key,
-        PRODUCT,
-        FEATURE_MAX_PROJECTS,
-        "0"
-    );
-
-    var hasAnalytics = await subscrio.FeatureChecker.IsEnabledForCustomerAsync(
-        customer.Key,
-        PRODUCT,
-        FEATURE_ANALYTICS
-    );
-
-    Console.WriteLine($"Max projects: {maxProjects}, Has analytics: {hasAnalytics}");
-    ```
-
-Results obey the hierarchy: subscription override → plan value → feature default. Resolved values are strings. The generic type parameter does not parse numbers or booleans.
-
-## Where to Go Next
-
-- [Core Overview](core-overview.md) – constructor, schema, and service index.
-- [Products](products.md), [Plans](plans.md), [Billing Cycles](billing-cycles.md) – catalog modeling.
-- [Subscriptions](subscriptions.md) and [Subscription Lifecycle](subscription-lifecycle.md) – lifecycle rules.
-- [Feature Checker](feature-checker.md) – runtime resolution.
-- Sample apps in `core/typescript/sample` and `core/dotnet/sample` – trials, upgrades, overrides, and downgrades.
-
-Once these steps succeed end-to-end, you can expand into Stripe integration, hooks, and configuration sync.
+- [How Subscrio Works](entitlements-guide.md) explains the model and how to choose between quotas and credits.
+- [Add-ons and Overrides](addons-and-overrides.md) extends this example with reusable packages and individual exceptions.
+- [Subscription Lifecycle](subscription-lifecycle.md) covers trials, cancellation, and plan transitions.
+- [Managing Configuration](managing-configuration.md) replaces repeated catalog-creation scripts with an explicit synchronization workflow.

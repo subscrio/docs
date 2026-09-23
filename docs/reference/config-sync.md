@@ -1,1193 +1,935 @@
 ---
-title: Configuration sync
-description: Sync products, features, plans, and billing cycles from a JSON file or ConfigSyncDto so every environment uses the same entitlement catalog.
+title: Configuration Sync
+description: Apply a declarative catalog and accounting configuration.
+reference_format: true
 ---
 
-# Configuration Sync Service Reference
+# Configuration Sync
 
-The Configuration Sync Service allows you to define all products, features, plans, and billing cycles in a single JSON configuration file or programmatically, then sync them to the database. This is ideal for version-controlled configuration management and infrastructure-as-code workflows.
+## Purpose
 
-## Accessing the Service
+<span id="method-reference" class="compatibility-anchor"></span>
 
-=== "TypeScript"
-    ```typescript
-    import { Subscrio } from 'subscrio';
+<span id="configuration-sync-service-reference" class="compatibility-anchor"></span>
+<span id="overview" class="compatibility-anchor"></span>
+<span id="quick-start" class="compatibility-anchor"></span>
+<span id="option-1-sync-from-json-file" class="compatibility-anchor"></span>
+<span id="option-2-sync-from-programmatic-config" class="compatibility-anchor"></span>
+<span id="option-3-initial-config-at-construction" class="compatibility-anchor"></span>
+<span id="json-schema" class="compatibility-anchor"></span>
+<span id="root-configuration" class="compatibility-anchor"></span>
+<span id="feature-configuration" class="compatibility-anchor"></span>
+<span id="product-configuration" class="compatibility-anchor"></span>
+<span id="plan-configuration" class="compatibility-anchor"></span>
+<span id="billing-cycle-configuration" class="compatibility-anchor"></span>
+<span id="complete-example" class="compatibility-anchor"></span>
+<span id="sync-behavior" class="compatibility-anchor"></span>
+<span id="create-operations" class="compatibility-anchor"></span>
+<span id="update-operations" class="compatibility-anchor"></span>
+<span id="archive-operations" class="compatibility-anchor"></span>
+<span id="association-sync" class="compatibility-anchor"></span>
+<span id="ignore-behavior" class="compatibility-anchor"></span>
+<span id="sync-report" class="compatibility-anchor"></span>
+<span id="validation" class="compatibility-anchor"></span>
+<span id="schema-validation" class="compatibility-anchor"></span>
+<span id="json-property-order" class="compatibility-anchor"></span>
+<span id="duplicate-key-validation" class="compatibility-anchor"></span>
+<span id="reference-validation" class="compatibility-anchor"></span>
+<span id="feature-value-validation" class="compatibility-anchor"></span>
+<span id="error-handling" class="compatibility-anchor"></span>
+<span id="validation-errors" class="compatibility-anchor"></span>
+<span id="sync-errors" class="compatibility-anchor"></span>
+<span id="partial-completion" class="compatibility-anchor"></span>
+<span id="best-practices" class="compatibility-anchor"></span>
+<span id="1-version-control-your-config" class="compatibility-anchor"></span>
+<span id="2-use-programmatic-config-for-dynamic-generation" class="compatibility-anchor"></span>
+<span id="3-validate-before-production" class="compatibility-anchor"></span>
+<span id="4-handle-errors-gracefully" class="compatibility-anchor"></span>
+<span id="5-use-partial-syncs" class="compatibility-anchor"></span>
+<span id="6-archive-instead-of-delete" class="compatibility-anchor"></span>
+<span id="common-patterns" class="compatibility-anchor"></span>
+<span id="toggle-features" class="compatibility-anchor"></span>
+<span id="tiered-plans" class="compatibility-anchor"></span>
+<span id="limitations" class="compatibility-anchor"></span>
+<span id="troubleshooting" class="compatibility-anchor"></span>
+<span id="features-must-appear-before-products-error" class="compatibility-anchor"></span>
+<span id="feature-key-x-referenced-in-product-does-not-exist-error" class="compatibility-anchor"></span>
+<span id="invalid-feature-value-for-numeric-type-error" class="compatibility-anchor"></span>
+<span id="sync-report-shows-errors" class="compatibility-anchor"></span>
 
-    const subscrio = new Subscrio({ database: { connectionString: process.env.DATABASE_URL! } });
-    const configSync = subscrio.configSync;
-    ```
+Configuration Sync creates or updates the catalog from a file or object. It supports features, products, plans, billing cycles, add-ons, credit rules, and overrides on existing subscriptions. It does not import usage events or wallet balances.
 
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
+## Access and initialization
 
-    var subscrio = new Subscrio(config);
-    var configSync = subscrio.ConfigSync;
-    ```
+### Access
 
-## Method Catalog
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== "TypeScript"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `syncFromFile` | Loads configuration from a JSON file and syncs to the database | `Promise<ConfigSyncReport>` |
-    | `syncFromJson` | Syncs configuration from a ConfigSyncDto object | `Promise<ConfigSyncReport>` |
-
-=== ".NET"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `SyncFromFileAsync` | Loads configuration from a JSON file and syncs to the database | `Task<ConfigSyncReport>` |
-    | `SyncFromJsonAsync` | Syncs configuration from a ConfigSyncDto object | `Task<ConfigSyncReport>` |
-
-## Overview
-
-The sync service:
-- **Creates** entities that don't exist in the database
-- **Updates** existing entities with new values
-- **Archives/Unarchives** entities based on the `archived` flag
-- **Syncs associations** (product-feature, plan-feature values)
-- **Ignores** entities not in the config (leaves them unchanged)
-- **Validates** all references and data types before syncing
-
-## Quick Start
-
-### Option 1: Sync from JSON File
-
-=== "TypeScript"
-    ```typescript
-    import { Subscrio } from 'subscrio';
-
-    const subscrio = new Subscrio({
-      database: { connectionString: process.env.DATABASE_URL! }
-    });
-
-    // Sync from a JSON file
-    const report = await subscrio.configSync.syncFromFile('./config.json');
-
-    console.log(`Created: ${report.created.features} features, ${report.created.products} products`);
-    console.log(`Updated: ${report.updated.features} features, ${report.updated.products} products`);
-    ```
-
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
-
-    var subscrio = new Subscrio(config);
-
-    var report = await subscrio.ConfigSync.SyncFromFileAsync("./config.json");
-
-    Console.WriteLine($"Created: {report.Created.Features} features, {report.Created.Products} products");
-    Console.WriteLine($"Updated: {report.Updated.Features} features, {report.Updated.Products} products");
-    ```
-
-### Option 2: Sync from Programmatic Config
-
-=== "TypeScript"
-    ```typescript
-    import { Subscrio, ConfigSyncDto } from 'subscrio';
-
-    const subscrio = new Subscrio({
-      database: { connectionString: process.env.DATABASE_URL! }
-    });
-
-    const config: ConfigSyncDto = {
-      version: '1.0',
-      features: [
-        { key: 'max-projects', displayName: 'Maximum Projects', valueType: 'numeric', defaultValue: '10' }
-      ],
-      products: [
-        {
-          key: 'project-management',
-          displayName: 'Project Management',
-          features: ['max-projects'],
-          plans: [
-            {
-              key: 'basic',
-              displayName: 'Basic Plan',
-              featureValues: { 'max-projects': '5' },
-              billingCycles: [
-                { key: 'monthly', displayName: 'Monthly', durationValue: 1, durationUnit: 'months' }
-              ]
-            }
-          ]
-        }
-      ]
-    };
-
-    const report = await subscrio.configSync.syncFromJson(config);
-    ```
-
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
-    using Subscrio.Core.Application.DTOs;
-
-    var subscrio = new Subscrio(config);
-
-    var config = new ConfigSyncDto(
-        Version: "1.0",
-        Features: new List<FeatureConfig>
-        {
-            new FeatureConfig("max-projects", "Maximum Projects", ValueType: "numeric", DefaultValue: "10")
-        },
-        Products: new List<ProductConfig>
-        {
-            new ProductConfig(
-                "project-management",
-                "Project Management",
-                Features: new List<string> { "max-projects" },
-                Plans: new List<PlanConfig>
-                {
-                    new PlanConfig(
-                        "basic",
-                        "Basic Plan",
-                        FeatureValues: new Dictionary<string, string> { ["max-projects"] = "5" },
-                        BillingCycles: new List<BillingCycleConfig>
-                        {
-                            new BillingCycleConfig("monthly", "Monthly", DurationValue: 1, DurationUnit: "months")
-                        }
-                    )
-                }
-            )
-        }
-    );
-
-    var report = await subscrio.ConfigSync.SyncFromJsonAsync(config);
-    ```
-
-### Option 3: Initial config at construction
-
-You can pass the same config sync input to the Subscrio constructor via `initialConfig` (TypeScript) or `InitialConfig` (.NET). After construction, call `runInitialConfigSync()` / `RunInitialConfigSyncAsync()` to apply it (e.g. after installing or verifying the schema).
-
-=== "TypeScript"
-    ```typescript
-    import { Subscrio } from 'subscrio';
-
-    const subscrio = new Subscrio({
-      database: { connectionString: process.env.DATABASE_URL! },
-      initialConfig: { type: 'file', filePath: './config.json' }
-      // or: initialConfig: { type: 'json', config: myConfigSyncDto }
-    });
-    await subscrio.installSchema();
-    const report = await subscrio.runInitialConfigSync(); // applies initial config, or null if none
-    ```
-
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
-    using Subscrio.Core.Config;
-
-    var subscrio = new Subscrio(new SubscrioConfig
-    {
-        Database = new DatabaseConfig { ConnectionString = "..." },
-        InitialConfig = new InitialConfigOptions { FilePath = "./config.json" }
-        // or: InitialConfig = new InitialConfigOptions { Config = myConfigSyncDto }
-    });
-    await subscrio.InstallSchemaAsync();
-    var report = await subscrio.RunInitialConfigSyncAsync(); // applies initial config, or null if none
-    ```
-
-## JSON Schema
-
-### Root Configuration
-
-TypeScript `syncFromFile` requires the `features` array to appear before `products` in the JSON text. .NET `SyncFromFileAsync` does not enforce property order.
-
-=== "TypeScript / JSON"
-    ```json
-    {
-      "version": "1.0",
-      "features": [...],
-      "products": [...]
-    }
-    ```
-
-=== ".NET / JSON"
-    ```json
-    {
-      "version": "1.0",
-      "features": [...],
-      "products": [...]
-    }
-    ```
-    Use `ConfigSyncDto` with `SyncFromJsonAsync()` or load from file with `SyncFromFileAsync()`.
-
-### Feature Configuration
-
-=== "TypeScript"
-    ```typescript
-    interface FeatureConfig {
-      key: string;                    // Required, globally unique, immutable
-      displayName: string;            // Required
-      description?: string;           // Optional
-      valueType: 'toggle' | 'numeric' | 'text';  // Required
-      defaultValue: string;           // Required, validated against valueType
-      groupName?: string;             // Optional
-      validator?: Record<string, unknown>;  // Optional
-      metadata?: Record<string, unknown>;  // Optional
-      archived?: boolean;             // Optional, defaults to false
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    public record FeatureConfig(
-        string Key,
-        string DisplayName,
-        string? Description = null,
-        string ValueType = "toggle",
-        string DefaultValue = "false",
-        string? GroupName = null,
-        Dictionary<string, object?>? Validator = null,
-        Dictionary<string, object?>? Metadata = null,
-        bool? Archived = null
-    );
-    ```
-
-**Example:**
-
-```json
-{
-  "key": "max-projects",
-  "displayName": "Maximum Projects",
-  "description": "Maximum number of projects allowed",
-  "valueType": "numeric",
-  "defaultValue": "1",
-  "groupName": "Limits",
-  "archived": false
-}
+```typescript
+const configSync = subscrio.configSync;
 ```
 
-### Product Configuration
+</div>
+<div class="language-content" data-lang="net" markdown="1">
 
-=== "TypeScript"
-    ```typescript
-    interface ProductConfig {
-      key: string;                    // Required, globally unique, immutable
-      displayName: string;            // Required
-      description?: string;           // Optional
-      metadata?: Record<string, unknown>;  // Optional
-      archived?: boolean;             // Optional, defaults to false
-      features?: string[];            // Optional, array of feature keys
-      plans?: PlanConfig[];          // Optional, nested plans
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    public record ProductConfig(
-        string Key,
-        string DisplayName,
-        string? Description = null,
-        Dictionary<string, object?>? Metadata = null,
-        bool? Archived = null,
-        List<string>? Features = null,
-        List<PlanConfig>? Plans = null
-    );
-    ```
-
-**Example:**
-
-```json
-{
-  "key": "project-management",
-  "displayName": "Project Management",
-  "description": "Complete project management solution",
-  "archived": false,
-  "features": ["max-projects", "team-size", "gantt-charts"],
-  "plans": [...]
-}
+```csharp
+var configSync = subscrio.ConfigSync;
 ```
 
-### Plan Configuration
+</div>
 
-=== "TypeScript"
-    ```typescript
-    interface PlanConfig {
-      key: string;                    // Required, unique within product, immutable
-      displayName: string;            // Required
-      description?: string;           // Optional
-      onExpireTransitionToBillingCycleKey?: string;  // Optional, must reference billing cycle in any plan within same product
-      metadata?: Record<string, unknown>;  // Optional
-      archived?: boolean;             // Optional, defaults to false
-      featureValues?: Record<string, string>;  // Optional, feature key -> value mapping
-      billingCycles?: BillingCycleConfig[];  // Optional, nested billing cycles
-    }
-    ```
+For construction-time configuration, see [Subscrio](core-overview.md#runinitialconfigsync). Sync must be invoked explicitly; merely supplying configuration does not apply it.
 
-=== ".NET"
-    ```csharp
-    public record PlanConfig(
-        string Key,
-        string DisplayName,
-        string? Description = null,
-        string? OnExpireTransitionToBillingCycleKey = null,
-        Dictionary<string, string>? FeatureValues = null,
-        List<BillingCycleConfig>? BillingCycles = null,
-        Dictionary<string, object?>? Metadata = null,
-        bool? Archived = null
-    );
-    ```
+## Method catalog
 
-**Example:**
+Database and connection failures may propagate from any operation. Method-specific errors are listed with each method.
 
-```json
-{
-  "key": "basic",
-  "displayName": "Basic Plan",
-  "description": "For small teams",
-  "archived": false,
-  "featureValues": {
-    "max-projects": "5",
-    "gantt-charts": "false"
-  },
-  "billingCycles": [...]
-}
-```
+<div class="language-content" data-lang="ts" markdown="1">
 
-### Billing Cycle Configuration
-
-=== "TypeScript"
-    ```typescript
-    interface BillingCycleConfig {
-      key: string;                    // Required, unique within plan, immutable
-      displayName: string;            // Required
-      description?: string;           // Optional
-      durationValue?: number;          // Required if durationUnit !== 'forever'
-      durationUnit: 'days' | 'weeks' | 'months' | 'years' | 'forever';  // Required
-      externalProductId?: string;      // Optional, e.g., Stripe price ID
-      archived?: boolean;             // Optional, defaults to false
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    public record BillingCycleConfig(
-        string Key,
-        string DisplayName,
-        string? Description = null,
-        int? DurationValue = null,
-        string DurationUnit = "days",
-        string? ExternalProductId = null,
-        bool? Archived = null
-    );
-    ```
-
-**Example:**
-
-```json
-{
-  "key": "monthly",
-  "displayName": "Monthly",
-  "description": "Monthly billing cycle",
-  "durationValue": 1,
-  "durationUnit": "months",
-  "externalProductId": "price_stripe_monthly",
-  "archived": false
-}
-```
-
-## Complete Example
-
-The same JSON config file works for both TypeScript and .NET:
-
-```json
-{
-  "version": "1.0",
-  "features": [
-    {
-      "key": "max-projects",
-      "displayName": "Maximum Projects",
-      "description": "Maximum number of projects allowed",
-      "valueType": "numeric",
-      "defaultValue": "1",
-      "groupName": "Limits"
-    },
-    {
-      "key": "gantt-charts",
-      "displayName": "Gantt Charts",
-      "description": "Enable Gantt chart visualization",
-      "valueType": "toggle",
-      "defaultValue": "false",
-      "groupName": "Features"
-    }
-  ],
-  "products": [
-    {
-      "key": "project-management",
-      "displayName": "Project Management",
-      "description": "Complete project management solution",
-      "archived": false,
-      "features": ["max-projects", "gantt-charts"],
-      "plans": [
-        {
-          "key": "basic",
-          "displayName": "Basic Plan",
-          "description": "For small teams",
-          "archived": false,
-          "featureValues": {
-            "max-projects": "5",
-            "gantt-charts": "false"
-          },
-          "billingCycles": [
-            {
-              "key": "monthly",
-              "displayName": "Monthly",
-              "durationValue": 1,
-              "durationUnit": "months",
-              "archived": false
-            },
-            {
-              "key": "yearly",
-              "displayName": "Yearly",
-              "durationValue": 1,
-              "durationUnit": "years",
-              "archived": false
-            }
-          ]
-        },
-        {
-          "key": "pro",
-          "displayName": "Pro Plan",
-          "description": "For growing teams",
-          "archived": false,
-          "featureValues": {
-            "max-projects": "50",
-            "gantt-charts": "true"
-          },
-          "billingCycles": [
-            {
-              "key": "monthly",
-              "displayName": "Monthly",
-              "durationValue": 1,
-              "durationUnit": "months",
-              "externalProductId": "price_stripe_monthly",
-              "archived": false
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-## Sync Behavior
-
-### Create Operations
-
-Entities in the config that don't exist in the database are created:
-- Features are created first (independent entities)
-- Products are created next
-- Plans are created for each product
-- Billing cycles are created for each plan
-
-### Update Operations
-
-Entities that exist in both config and database are updated:
-- Only fields specified in the config are updated
-- Keys are immutable and cannot be changed
-- Archive status is handled separately (see below)
-
-### Archive Operations
-
-The `archived` boolean property controls entity status:
-
-- **`archived: true`** - Sets entity status to `archived`
-- **`archived: false`** or **omitted** - Sets entity status to `active`
-
-Archive operations use the entity's `archive()` and `unarchive()` methods, ensuring business rules are followed.
-
-### Association Sync
-
-**Product-Feature Associations:**
-- Features listed in `product.features` are associated
-- Features not listed are dissociated
-- Only features explicitly in the config are synced
-
-**Plan Feature Values:**
-- Feature values in `plan.featureValues` are set
-- Feature values not in config are removed
-- Values are validated against feature `valueType`
-
-### Ignore Behavior
-
-Entities in the database but **not** in the config are:
-- **Completely ignored** - no changes made
-- **Counted** in the sync report's `ignored` section
-- **Left unchanged** - status, associations, and values remain as-is
-
-This allows partial syncs where you only update specific entities.
-
-## Sync Report
-
-The sync service returns a detailed report:
-
-=== "TypeScript"
-    ```typescript
-    interface ConfigSyncReport {
-      created: {
-        features: number;
-        products: number;
-        plans: number;
-        billingCycles: number;
-      };
-      updated: {
-        features: number;
-        products: number;
-        plans: number;
-        billingCycles: number;
-      };
-      archived: {
-        features: number;
-        products: number;
-        plans: number;
-        billingCycles: number;
-      };
-      unarchived: {
-        features: number;
-        products: number;
-        plans: number;
-        billingCycles: number;
-      };
-      ignored: {
-        features: number;
-        products: number;
-        plans: number;
-        billingCycles: number;
-      };
-      errors: Array<{
-        entityType: 'feature' | 'product' | 'plan' | 'billingCycle';
-        key: string;
-        message: string;
-      }>;
-      warnings: Array<{
-        entityType: 'feature' | 'product' | 'plan' | 'billingCycle';
-        key: string;
-        message: string;
-      }>;
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    public record ConfigSyncCounts(int Features, int Products, int Plans, int BillingCycles);
-
-    public record ConfigSyncError(string EntityType, string Key, string Message);
-
-    public record ConfigSyncWarning(string EntityType, string Key, string Message);
-
-    public record ConfigSyncReport(
-        ConfigSyncCounts Created,
-        ConfigSyncCounts Updated,
-        ConfigSyncCounts Archived,
-        ConfigSyncCounts Unarchived,
-        ConfigSyncCounts Ignored,
-        List<ConfigSyncError> Errors,
-        List<ConfigSyncWarning> Warnings
-    );
-    ```
-
-**Example Usage:**
-
-=== "TypeScript"
-    ```typescript
-    const report = await subscrio.configSync.syncFromJson(config);
-
-    if (report.errors.length > 0) {
-      console.error('Sync errors:');
-      report.errors.forEach(error => {
-        console.error(`  ${error.entityType} ${error.key}: ${error.message}`);
-      });
-    }
-
-    console.log(`Sync complete: ${report.created.features} features created`);
-    ```
-
-=== ".NET"
-    ```csharp
-    var report = await subscrio.ConfigSync.SyncFromJsonAsync(config);
-
-    if (report.Errors.Count > 0)
-    {
-        Console.Error.WriteLine("Sync errors:");
-        foreach (var error in report.Errors)
-        {
-            Console.Error.WriteLine($"  {error.EntityType} {error.Key}: {error.Message}");
-        }
-    }
-
-    Console.WriteLine($"Sync complete: {report.Created.Features} features created");
-    ```
-
-## Validation
-
-The sync service performs comprehensive validation:
-
-### Schema Validation
-- All required fields are present
-- Field types match expected types
-- String lengths within limits
-- Enum values are valid
-
-### JSON Property Order
-- TypeScript `syncFromFile` throws `ValidationError` if `products` appears before `features` in the file text.
-- TypeScript `syncFromJson` and both .NET methods skip this check.
-
-### Duplicate Key Validation
-- Feature keys and product keys must be globally unique in the file.
-- The file schema allows the same plan key under different products and the same billing cycle key under different plans. Persist still requires those keys to be globally unique and records a sync error if they already exist.
-
-### Reference Validation
-- All feature keys referenced in products must exist in features array
-- All feature keys in `plan.featureValues` must be associated with the product
-- `onExpireTransitionToBillingCycleKey` must reference a valid billing cycle in any plan within the same product
-
-### Feature Value Validation
-- Toggle features: values must be `"true"` or `"false"`
-- Numeric features: values must be valid numbers
-- Text features: any string value is accepted
-
-## Error Handling
-
-### Validation Errors
-
-Validation errors are thrown before any sync operations:
-
-=== "TypeScript"
-    ```typescript
-    try {
-      await subscrio.configSync.syncFromJson(config);
-    } catch (error) {
-      if (error instanceof ValidationError) {
-        console.error('Validation failed:', error.message);
-        console.error('Details:', error.errors);
-      }
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    try
-    {
-        await subscrio.ConfigSync.SyncFromJsonAsync(config);
-    }
-    catch (Subscrio.Core.Application.Errors.ValidationException ex)
-    {
-        Console.Error.WriteLine($"Validation failed: {ex.Message}");
-    }
-    ```
-
-### Sync Errors
-
-Errors during sync operations are collected in the report:
-
-=== "TypeScript"
-    ```typescript
-    const report = await subscrio.configSync.syncFromJson(config);
-
-    if (report.errors.length > 0) {
-      // Some operations failed, but others may have succeeded
-      // Operations are idempotent, so you can re-run sync
-      console.error('Some operations failed:', report.errors);
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    var report = await subscrio.ConfigSync.SyncFromJsonAsync(config);
-
-    if (report.Errors.Count > 0)
-    {
-        // Some operations failed, but others may have succeeded
-        // Operations are idempotent, so you can re-run sync
-        Console.Error.WriteLine("Some operations failed:");
-        foreach (var err in report.Errors)
-            Console.Error.WriteLine($"  {err.EntityType} {err.Key}: {err.Message}");
-    }
-    ```
-
-### Partial Completion
-
-Since operations are **idempotent**, if an error occurs:
-1. Completed operations remain in the database
-2. Failed operations are reported in `report.errors`
-3. You can re-run sync to complete remaining operations
-
-## Best Practices
-
-### 1. Version Control Your Config
-
-Store configuration files in version control:
-```bash
-config/
-├── production.json
-├── staging.json
-└── development.json
-```
-
-### 2. Use Programmatic Config for Dynamic Generation
-
-=== "TypeScript"
-    ```typescript
-    function generateConfig(environment: string): ConfigSyncDto {
-      const baseFeatures = [...];
-      const environmentFeatures = getEnvironmentFeatures(environment);
-      
-      return {
-        version: '1.0',
-        features: [...baseFeatures, ...environmentFeatures],
-        products: [...]
-      };
-    }
-
-    await subscrio.configSync.syncFromJson(generateConfig('production'));
-    ```
-
-=== ".NET"
-    ```csharp
-    ConfigSyncDto GenerateConfig(string environment)
-    {
-        var baseFeatures = new List<FeatureConfig> { /* ... */ };
-        var environmentFeatures = GetEnvironmentFeatures(environment);
-        return new ConfigSyncDto(
-            Version: "1.0",
-            Features: baseFeatures.Concat(environmentFeatures).ToList(),
-            Products: new List<ProductConfig> { /* ... */ }
-        );
-    }
-
-    await subscrio.ConfigSync.SyncFromJsonAsync(GenerateConfig("production"));
-    ```
-
-### 3. Validate Before Production
-
-Always validate your config before syncing to production:
-
-=== "TypeScript"
-    ```typescript
-    import { ConfigSyncDtoSchema } from 'subscrio';
-
-    try {
-      const config = ConfigSyncDtoSchema.parse(jsonData);
-      // Config is valid, safe to sync
-      await subscrio.configSync.syncFromJson(config);
-    } catch (error) {
-      console.error('Config validation failed:', error);
-      process.exit(1);
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    try
-    {
-        var config = JsonSerializer.Deserialize<ConfigSyncDto>(jsonData,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        if (config == null) throw new InvalidOperationException("Invalid config");
-        await subscrio.ConfigSync.SyncFromJsonAsync(config);
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"Config validation failed: {ex.Message}");
-        Environment.Exit(1);
-    }
-    ```
-
-### 4. Handle Errors Gracefully
-
-=== "TypeScript"
-    ```typescript
-    const report = await subscrio.configSync.syncFromJson(config);
-
-    if (report.errors.length > 0) {
-      // Log errors but don't fail the entire process
-      logger.error('Sync completed with errors', { errors: report.errors });
-      
-      // Optionally re-run for failed operations
-      if (shouldRetry(report.errors)) {
-        await subscrio.configSync.syncFromJson(config);
-      }
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    var report = await subscrio.ConfigSync.SyncFromJsonAsync(config);
-
-    if (report.Errors.Count > 0)
-    {
-        foreach (var err in report.Errors)
-            Console.Error.WriteLine($"  {err.EntityType} {err.Key}: {err.Message}");
-        if (ShouldRetry(report.Errors))
-        {
-            await subscrio.ConfigSync.SyncFromJsonAsync(config);
-        }
-    }
-    ```
-
-### 5. Use Partial Syncs
-
-Only include entities you want to update:
-
-=== "TypeScript"
-    ```typescript
-    // Only update features, leave products unchanged
-    const partialConfig: ConfigSyncDto = {
-      version: '1.0',
-      features: [
-        { key: 'new-feature', displayName: 'New Feature', valueType: 'toggle', defaultValue: 'false' }
-      ],
-      products: []  // Empty - products won't be touched
-    };
-
-    await subscrio.configSync.syncFromJson(partialConfig);
-    ```
-
-=== ".NET"
-    ```csharp
-    // Only update features, leave products unchanged
-    var partialConfig = new ConfigSyncDto(
-        Version: "1.0",
-        Features: new List<FeatureConfig>
-        {
-            new FeatureConfig("new-feature", "New Feature", ValueType: "toggle", DefaultValue: "false")
-        },
-        Products: new List<ProductConfig>()  // Empty - products won't be touched
-    );
-
-    await subscrio.ConfigSync.SyncFromJsonAsync(partialConfig);
-    ```
-
-### 6. Archive Instead of Delete
-
-Use `archived: true` to mark entities as archived rather than deleting them:
-
-```json
-{
-  "key": "old-feature",
-  "displayName": "Old Feature",
-  "valueType": "toggle",
-  "defaultValue": "false",
-  "archived": true
-}
-```
-
-## Common Patterns
-
-### Toggle Features
-
-=== "TypeScript"
-    ```typescript
-    const config: ConfigSyncDto = {
-      version: '1.0',
-      features: [
-        {
-          key: 'beta-feature',
-          displayName: 'Beta Feature',
-          valueType: 'toggle',
-          defaultValue: 'false'
-        }
-      ],
-      products: [
-        {
-          key: 'main-product',
-          displayName: 'Main Product',
-          features: ['beta-feature'],
-          plans: [
-            {
-              key: 'premium',
-              displayName: 'Premium',
-              featureValues: {
-                'beta-feature': 'true'  // Enable for premium plan
-              }
-            }
-          ]
-        }
-      ]
-    };
-    ```
-
-=== ".NET"
-    ```csharp
-    var config = new ConfigSyncDto(
-        Version: "1.0",
-        Features: new List<FeatureConfig>
-        {
-            new FeatureConfig("beta-feature", "Beta Feature", ValueType: "toggle", DefaultValue: "false")
-        },
-        Products: new List<ProductConfig>
-        {
-            new ProductConfig(
-                "main-product",
-                "Main Product",
-                Features: new List<string> { "beta-feature" },
-                Plans: new List<PlanConfig>
-                {
-                    new PlanConfig(
-                        "premium",
-                        "Premium",
-                        FeatureValues: new Dictionary<string, string> { ["beta-feature"] = "true" }
-                    )
-                }
-            )
-        }
-    );
-    ```
-
-### Tiered Plans
-
-=== "TypeScript"
-    ```typescript
-    const config: ConfigSyncDto = {
-      version: '1.0',
-      features: [
-        { key: 'storage-gb', displayName: 'Storage (GB)', valueType: 'numeric', defaultValue: '1' }
-      ],
-      products: [
-        {
-          key: 'storage-product',
-          displayName: 'Storage Product',
-          features: ['storage-gb'],
-          plans: [
-            {
-              key: 'basic',
-              displayName: 'Basic',
-              featureValues: { 'storage-gb': '10' }
-            },
-            {
-              key: 'pro',
-              displayName: 'Pro',
-              featureValues: { 'storage-gb': '100' }
-            },
-            {
-              key: 'enterprise',
-              displayName: 'Enterprise',
-              featureValues: { 'storage-gb': '1000' }
-            }
-          ]
-        }
-      ]
-    };
-    ```
-
-=== ".NET"
-    ```csharp
-    var config = new ConfigSyncDto(
-        Version: "1.0",
-        Features: new List<FeatureConfig>
-        {
-            new FeatureConfig("storage-gb", "Storage (GB)", ValueType: "numeric", DefaultValue: "1")
-        },
-        Products: new List<ProductConfig>
-        {
-            new ProductConfig(
-                "storage-product",
-                "Storage Product",
-                Features: new List<string> { "storage-gb" },
-                Plans: new List<PlanConfig>
-                {
-                    new PlanConfig("basic", "Basic", FeatureValues: new Dictionary<string, string> { ["storage-gb"] = "10" }),
-                    new PlanConfig("pro", "Pro", FeatureValues: new Dictionary<string, string> { ["storage-gb"] = "100" }),
-                    new PlanConfig("enterprise", "Enterprise", FeatureValues: new Dictionary<string, string> { ["storage-gb"] = "1000" })
-                }
-            )
-        }
-    );
-    ```
-
-## Limitations
-
-1. **No Delete Operations**: Entities can only be archived, not deleted
-2. **Immutable Keys**: Keys cannot be changed after creation
-3. **Sequential Operations**: Operations run sequentially (not in a transaction)
-4. **Partial Completion**: If an error occurs, some operations may have completed
-
-## Troubleshooting
-
-### "features must appear before products" Error
-
-**Problem**: TypeScript `syncFromFile` rejected the JSON text order.
-
-**Solution**: Put the `features` array before `products` in the file. This check is TypeScript-only.
-
-### "Feature key 'X' referenced in product does not exist" Error
-
-**Problem**: Product references a feature that's not in the features array.
-
-**Solution**: Add the feature to the `features` array, or remove it from `product.features`.
-
-### "Invalid feature value for numeric type" Error
-
-**Problem**: Plan feature value doesn't match feature's valueType.
-
-**Solution**: Ensure numeric features have numeric values, toggle features have "true"/"false".
-
-### Sync Report Shows Errors
-
-**Problem**: Some operations failed during sync.
-
-**Solution**: 
-1. Check `report.errors` for details
-2. Fix the issues in your config
-3. Re-run sync (operations are idempotent)
-
-## Method Reference
-
-### syncFromFile
-
-#### Description
-Loads configuration from a JSON file, validates it, and syncs products, features, plans, and billing cycles to the database. The `features` array must appear before the `products` array in the JSON file.
-
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    syncFromFile(filePath: string): Promise<ConfigSyncReport>
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `filePath` | `string` | Yes | Path to the JSON configuration file. |
-
-    #### Returns
-    `Promise<ConfigSyncReport>` – sync report with counts for created, updated, archived, unarchived, and ignored entities.
-
-    #### Return Properties
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `created` | `{ features, products, plans, billingCycles }` | Counts of entities created. |
-    | `updated` | `{ features, products, plans, billingCycles }` | Counts of entities updated. |
-    | `archived` | `{ features, products, plans, billingCycles }` | Counts of entities archived. |
-    | `unarchived` | `{ features, products, plans, billingCycles }` | Counts of entities unarchived. |
-    | `ignored` | `{ features, products, plans, billingCycles }` | Counts of entities not in config (left unchanged). |
-    | `errors` | `Array<{ entityType, key, message }>` | Errors encountered during sync. |
-    | `warnings` | `Array<{ entityType, key, message }>` | Non-fatal warnings. |
-
-    #### Example
-    ```typescript
-    const report = await subscrio.configSync.syncFromFile('./config.json');
-    console.log(`Created: ${report.created.features} features, ${report.created.products} products`);
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<ConfigSyncReport> SyncFromFileAsync(string filePath)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `filePath` | `string` | Yes | Path to the JSON configuration file. |
-
-    #### Returns
-    `Task<ConfigSyncReport>` – sync report with counts for created, updated, archived, unarchived, and ignored entities.
-
-    #### Return Properties
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `Created` | `ConfigSyncCounts` | Counts of entities created. |
-    | `Updated` | `ConfigSyncCounts` | Counts of entities updated. |
-    | `Archived` | `ConfigSyncCounts` | Counts of entities archived. |
-    | `Unarchived` | `ConfigSyncCounts` | Counts of entities unarchived. |
-    | `Ignored` | `ConfigSyncCounts` | Counts of entities not in config (left unchanged). |
-    | `Errors` | `List<ConfigSyncError>` | Errors encountered during sync. |
-    | `Warnings` | `List<ConfigSyncWarning>` | `{ EntityType, Key, Message }`. |
-
-    #### Example
-    ```csharp
-    var report = await subscrio.ConfigSync.SyncFromFileAsync("./config.json");
-    Console.WriteLine($"Created: {report.Created.Features} features, {report.Created.Products} products");
-    ```
-
-#### Expected Results
-- Reads and parses the JSON file.
-- TypeScript validates JSON property order (`features` before `products`). .NET does not.
-- Validates config schema and all references.
-- Creates, updates, archives, and unarchives entities as needed.
-- Returns a detailed report.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | File invalid, JSON property order incorrect, or config schema validation fails. |
-| `Error` | File cannot be read (e.g., file not found). |
+| [`syncFromFile`](#syncfromfile) | Loads a JSON file and applies its configuration. |
+| [`syncFromJson`](#syncfromjson) | Applies a configuration object and returns a report. |
+| [`exportConfig`](#exportconfig) | Exports the catalog and optionally selected subscription overrides. |
 
-### syncFromJson
+</div>
 
-#### Description
-Syncs configuration from a ConfigSyncDto object. Use when building config programmatically rather than loading from a file.
+<div class="language-content" data-lang="net" markdown="1">
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    syncFromJson(config: ConfigSyncDto): Promise<ConfigSyncReport>
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `config` | `ConfigSyncDto` | Yes | Configuration object (features, products with nested plans and billing cycles). |
-
-    #### Returns
-    `Promise<ConfigSyncReport>` – same structure as `syncFromFile`.
-
-    #### Return Properties
-    Same as `syncFromFile` (see ConfigSyncReport).
-
-    #### Example
-    ```typescript
-    const config: ConfigSyncDto = {
-      version: '1.0',
-      features: [{ key: 'max-projects', displayName: 'Max Projects', valueType: 'numeric', defaultValue: '10' }],
-      products: [{ key: 'my-product', displayName: 'My Product', features: ['max-projects'], plans: [] }]
-    };
-    const report = await subscrio.configSync.syncFromJson(config);
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<ConfigSyncReport> SyncFromJsonAsync(ConfigSyncDto config)
-    ```
-
-    #### Inputs
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `config` | `ConfigSyncDto` | Yes | Configuration object (features, products with nested plans and billing cycles). |
-
-    #### Returns
-    `Task<ConfigSyncReport>` – same structure as `SyncFromFileAsync`.
-
-    #### Return Properties
-    Same as `SyncFromFileAsync` (see ConfigSyncReport).
-
-    #### Example
-    ```csharp
-    var config = new ConfigSyncDto(
-        Version: "1.0",
-        Features: new List<FeatureConfig> { new("max-projects", "Max Projects", ValueType: "numeric", DefaultValue: "10") },
-        Products: new List<ProductConfig> { new("my-product", "My Product", Features: new List<string> { "max-projects" }, Plans: new List<PlanConfig>()) }
-    );
-    var report = await subscrio.ConfigSync.SyncFromJsonAsync(config);
-    ```
-
-#### Expected Results
-- Validates config schema and all references.
-- Creates, updates, archives, and unarchives entities as needed.
-- Returns a detailed report.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | Config schema invalid or references break (e.g., plan references non-existent product). |
+| [`SyncFromFileAsync`](#syncfromfile) | Loads a JSON file and applies its configuration. |
+| [`SyncFromJsonAsync`](#syncfromjson) | Applies a configuration object and returns a report. |
+| [`ExportConfigAsync`](#exportconfig) | Exports the catalog and optionally selected subscription overrides. |
 
-## See Also
+</div>
 
-- [Products Reference](./products.md)
-- [Features Reference](./features.md)
-- [Plans Reference](./plans.md)
-- [Billing Cycles Reference](./billing-cycles.md)
+## Method details
+
+<div class="method-entry" markdown="1">
+
+### syncFromFile { #syncfromfile data-method-ts="syncFromFile" data-method-net="SyncFromFileAsync" }
+
+<span id="description" class="compatibility-anchor"></span>
+<span id="signature" class="compatibility-anchor"></span>
+<span id="inputs" class="compatibility-anchor"></span>
+<span id="returns" class="compatibility-anchor"></span>
+<span id="return-properties" class="compatibility-anchor"></span>
+<span id="example" class="compatibility-anchor"></span>
+<span id="signature_1" class="compatibility-anchor"></span>
+<span id="inputs_1" class="compatibility-anchor"></span>
+<span id="returns_1" class="compatibility-anchor"></span>
+<span id="return-properties_1" class="compatibility-anchor"></span>
+<span id="example_1" class="compatibility-anchor"></span>
+<span id="expected-results" class="compatibility-anchor"></span>
+<span id="potential-errors" class="compatibility-anchor"></span>
+
+Read a UTF-8 JSON file, validate it, and apply the same synchronization as the object method. TypeScript requires features to occur before products in the file text; .NET does not enforce property order.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+syncFromFile(filePath: string): Promise<ConfigSyncReport>
+```
+
+</div>
+
+**Parameters**
+
+- `filePath`: File containing [ConfigSyncDto](#ConfigSyncDto).
+
+**Returns** <code><a href="#ConfigSyncReport">ConfigSyncReport</a></code>: Counts, changes, warnings, and per-entity failures.
+
+**Example**
+
+```typescript
+// catalog.json contains a ConfigSyncDto document.
+const report = await subscrio.configSync.syncFromFile('./catalog.json');
+console.log(report.errors);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationError`: Reading, parsing, validation, or an uncaught sync operation fails.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<ConfigSyncReport> SyncFromFileAsync(string filePath)
+```
+
+</div>
+
+**Parameters**
+
+- `filePath`: File containing [ConfigSyncDto](#ConfigSyncDto).
+
+**Returns** <code><a href="#ConfigSyncReport">ConfigSyncReport</a></code>: Counts, changes, warnings, and per-entity failures.
+
+**Example**
+
+```csharp
+// catalog.json contains a ConfigSyncDto document.
+var report = await subscrio.ConfigSync.SyncFromFileAsync("./catalog.json");
+Console.WriteLine(report.Errors.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: Reading, parsing, validation, or an uncaught sync operation fails.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### syncFromJson { #syncfromjson data-method-ts="syncFromJson" data-method-net="SyncFromJsonAsync" }
+
+<span id="description_1" class="compatibility-anchor"></span>
+<span id="signature_2" class="compatibility-anchor"></span>
+<span id="inputs_2" class="compatibility-anchor"></span>
+<span id="returns_2" class="compatibility-anchor"></span>
+<span id="return-properties_2" class="compatibility-anchor"></span>
+<span id="example_2" class="compatibility-anchor"></span>
+<span id="signature_3" class="compatibility-anchor"></span>
+<span id="inputs_3" class="compatibility-anchor"></span>
+<span id="returns_3" class="compatibility-anchor"></span>
+<span id="return-properties_3" class="compatibility-anchor"></span>
+<span id="example_3" class="compatibility-anchor"></span>
+<span id="expected-results_1" class="compatibility-anchor"></span>
+<span id="potential-errors_1" class="compatibility-anchor"></span>
+<span id="see-also" class="compatibility-anchor"></span>
+<span id="add-on-metering-credit-and-override-configuration" class="compatibility-anchor"></span>
+<span id="description_2" class="compatibility-anchor"></span>
+<span id="signature_4" class="compatibility-anchor"></span>
+<span id="inputs_4" class="compatibility-anchor"></span>
+<span id="returns_4" class="compatibility-anchor"></span>
+<span id="return-properties_4" class="compatibility-anchor"></span>
+<span id="example_4" class="compatibility-anchor"></span>
+<span id="signature_5" class="compatibility-anchor"></span>
+<span id="inputs_5" class="compatibility-anchor"></span>
+<span id="returns_5" class="compatibility-anchor"></span>
+<span id="return-properties_5" class="compatibility-anchor"></span>
+<span id="example_5" class="compatibility-anchor"></span>
+<span id="expected-results_2" class="compatibility-anchor"></span>
+<span id="potential-errors_2" class="compatibility-anchor"></span>
+
+Validate configuration and references, then apply changes through the public library operations. Listed entities are created or updated; omitted entities remain untouched. An explicit archive flag changes status. Supplied relationship collections can remove associations or rules, as described on their fields.
+
+The entire sync is not one transaction. Entity failures are collected and processing continues, so inspect the report even when the call succeeds. Earlier successful writes remain if later work fails.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+syncFromJson(config: ConfigSyncDto): Promise<ConfigSyncReport>
+```
+
+</div>
+
+**Parameters**
+
+- `config`: [ConfigSyncDto](#ConfigSyncDto). This is declarative synchronization, not the generic partial-update convention.
+
+**Returns** <code><a href="#ConfigSyncReport">ConfigSyncReport</a></code>: Catalog counts and configuration changes, including partial failures.
+
+**Example**
+
+```typescript
+const report = await subscrio.configSync.syncFromJson({
+  version: '1',
+  features: [{ key: 'max-seats', displayName: 'Seats', valueType: 'numeric', defaultValue: '1' }],
+  products: [{
+    key: 'saas', displayName: 'SaaS', features: ['max-seats'],
+    plans: [{
+      key: 'pro', displayName: 'Pro', featureValues: { 'max-seats': '20' },
+      billingCycles: [{ key: 'pro-monthly', displayName: 'Monthly', durationUnit: 'months', durationValue: 1 }]
+    }]
+  }]
+});
+console.log(report.created, report.errors);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `ZodError`: The TypeScript schema, duplicate keys, or catalog references are invalid.
+- `ValidationError`: Accounting configuration or cross-references fail preflight validation.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<ConfigSyncReport> SyncFromJsonAsync(ConfigSyncDto config)
+```
+
+</div>
+
+**Parameters**
+
+- `config`: [ConfigSyncDto](#ConfigSyncDto). This is declarative synchronization, not the generic partial-update convention.
+
+**Returns** <code><a href="#ConfigSyncReport">ConfigSyncReport</a></code>: Catalog counts and configuration changes, including partial failures.
+
+**Example**
+
+```csharp
+var report = await subscrio.ConfigSync.SyncFromJsonAsync(new ConfigSyncDto(
+    Version: "1",
+    Features: [new FeatureConfig("max-seats", "Seats", ValueType: "numeric", DefaultValue: "1")],
+    Products: [new ProductConfig("saas", "SaaS",
+        Features: ["max-seats"],
+        Plans: [new PlanConfig("pro", "Pro",
+            FeatureValues: new() { ["max-seats"] = "20" },
+            BillingCycles: [new BillingCycleConfig("pro-monthly", "Monthly", DurationValue: 1, DurationUnit: "months")])])]
+));
+Console.WriteLine($"Created plans: {report.Created.Plans}, errors: {report.Errors.Count}");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: Accounting configuration or cross-references fail preflight validation.
+
+</details>
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+### exportConfig { #exportconfig data-method-ts="exportConfig" data-method-net="ExportConfigAsync" }
+
+Read catalog definitions, including archived entries, feature relationships, add-ons, metering settings, and credit rules, into a configuration object. Subscription overrides are included only for the keys you request. This export does not include customer records, subscription lifecycle data, add-on attachments, usage history, or credit balances and transactions.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+exportConfig(subscriptionKeys?: string[]): Promise<ConfigSyncDto>
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKeys`: Optional existing subscription keys whose overrides to include; defaults to an empty array.
+
+**Returns** [ConfigSyncDto](#ConfigSyncDto): Catalog configuration that can be passed to `syncFromJson`.
+
+**Example**
+
+```typescript
+const config = await subscrio.configSync.exportConfig();
+console.log(config.products.length);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `Error`: A requested subscription does not exist.
+
+</details>
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<ConfigSyncDto> ExportConfigAsync(IEnumerable<string>? subscriptionKeys)
+```
+
+</div>
+
+**Parameters**
+
+- `subscriptionKeys`: Optional existing subscription keys whose overrides to include; null or an empty collection includes none.
+
+**Returns** [ConfigSyncDto](#ConfigSyncDto): Catalog configuration that can be passed to `SyncFromJsonAsync`.
+
+**Example**
+
+```csharp
+var config = await subscrio.ConfigSync.ExportConfigAsync();
+Console.WriteLine(config.Products.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: A requested subscription does not exist.
+
+</details>
+
+</div>
+
+</div>
+
+## Data types
+
+Required means an input must be supplied, or a returned property is guaranteed present. Nested keys inherit their parent product or plan; keys remain globally unique. Refer to the corresponding object page for field validation limits.
+
+<div class="data-type" markdown="1">
+
+### ConfigSyncDto { #ConfigSyncDto }
+
+Root synchronization input.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `creditConsumptionRules` | <code><a href="#CreditConsumptionConfig">CreditConsumptionConfig</a>[] \| undefined</code> | No | None | When supplied at the root, replaces the complete set of feature/currency costs across the catalog. An empty array removes all costs. Do not duplicate a feature/currency pair in nested feature rules. |
+| `creditCurrencies` | <code><a href="#CreditCurrencyConfig">CreditCurrencyConfig</a>[] \| undefined</code> | No | None | Currencies to create or update; omitted currencies remain unchanged. |
+| `subscriptions` | <code><a href="#SubscriptionOverrideConfig">SubscriptionOverrideConfig</a>[] \| undefined</code> | No | None | Override changes for existing subscriptions only; this does not create subscriptions. |
+| `version` | <code>string</code> | Yes | None | Configuration version label. Supply a nonempty string; no version-specific schema selection is performed. |
+| `features` | <code>{ key: string; displayName: string; valueType: &quot;toggle&quot; \| &quot;numeric&quot; \| &quot;text&quot; \| &quot;metered&quot;; defaultValue: string; description?: string \| undefined; groupName?: string \| undefined; meteredConfig?: { resetPeriod: &quot;hourly&quot; \| &quot;daily&quot; \| &quot;weekly&quot; \| &quot;monthly&quot; \| &quot;yearly&quot; \| &quot;billing_period&quot;; enforcement: &quot;hard&quot; \| &quot;soft&quot;; aggregation: &quot;count&quot; \| &quot;sum&quot;; usageScope: &quot;customer&quot; \| &quot;subscription&quot;; } \| undefined; validator?: Record&lt;string, unknown&gt; \| undefined; metadata?: Record&lt;string, unknown&gt; \| undefined; creditConsumptionRules?: { currencyKey: string; creditsPerUnit: number; }[] \| undefined; archived?: boolean \| undefined; }[]</code> | Yes | None | Feature definitions. Product associations must refer to these keys in TypeScript. |
+| `products` | <code>{ key: string; displayName: string; description?: string \| undefined; metadata?: Record&lt;string, unknown&gt; \| undefined; addons?: { key: string; displayName: string; description?: string \| undefined; compositionMode?: &quot;additive&quot; \| &quot;override&quot; \| undefined; priority?: number \| undefined; archived?: boolean \| undefined; metadata?: Record&lt;string, unknown&gt; \| undefined; featureValues?: Record&lt;string, string&gt; \| undefined; }[] \| undefined; featureResolution?: Record&lt;string, { addonRule?: &quot;additive&quot; \| &quot;most_generous&quot; \| &quot;override_wins&quot; \| undefined; subscriptionRule?: &quot;additive&quot; \| &quot;most_generous&quot; \| &quot;override_wins&quot; \| null \| undefined; }&gt; \| undefined; archived?: boolean \| undefined; features?: string[] \| undefined; plans?: { key: string; displayName: string; description?: string \| undefined; metadata?: Record&lt;string, unknown&gt; \| undefined; onExpireTransitionToBillingCycleKey?: string \| undefined; archived?: boolean \| undefined; creditGrants?: { currencyKey: string; amount: number; cadence: &quot;monthly&quot; \| &quot;yearly&quot; \| &quot;billing_period&quot; \| &quot;once&quot;; expiryPolicy?: &quot;none&quot; \| &quot;grant_period_end&quot; \| undefined; cancellationPolicy?: &quot;retain&quot; \| &quot;expire&quot; \| undefined; }[] \| undefined; featureValues?: Record&lt;string, string&gt; \| undefined; billingCycles?: { key: string; displayName: string; durationUnit: &quot;days&quot; \| &quot;weeks&quot; \| &quot;months&quot; \| &quot;years&quot; \| &quot;forever&quot;; description?: string \| undefined; durationValue?: number \| undefined; externalProductId?: string \| undefined; archived?: boolean \| undefined; }[] \| undefined; }[] \| undefined; }[]</code> | Yes | None | Products with nested plans and billing cycles. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Version` | <code>string</code> | Yes | None | Configuration version label. Supply a nonempty string; no version-specific schema selection is performed. |
+| `Features` | <code>List&lt;<a href="#FeatureConfig">FeatureConfig</a>&gt;</code> | Yes | None | Feature definitions. Product associations must refer to these keys in TypeScript. |
+| `Products` | <code>List&lt;<a href="#ProductConfig">ProductConfig</a>&gt;</code> | Yes | None | Products with nested plans and billing cycles. |
+| `CreditCurrencies` | <code>List&lt;<a href="#CreditCurrencyConfig">CreditCurrencyConfig</a>&gt;?</code> | No | null | Currencies to create or update; omitted currencies remain unchanged. |
+| `Subscriptions` | <code>List&lt;<a href="#SubscriptionOverrideConfig">SubscriptionOverrideConfig</a>&gt;?</code> | No | null | Override changes for existing subscriptions only; this does not create subscriptions. |
+| `CreditConsumptionRules` | <code>List&lt;<a href="#CreditConsumptionConfig">CreditConsumptionConfig</a>&gt;?</code> | No | null | When supplied at the root, replaces the complete set of feature/currency costs across the catalog. An empty array removes all costs. Do not duplicate a feature/currency pair in nested feature rules. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### ConfigSyncReport { #ConfigSyncReport }
+
+Synchronization outcome. TypeScript count, message, and details fields use the inline shapes documented below.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `created` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | New core catalog entities. |
+| `updated` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | Changed core catalog entities. |
+| `archived` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | Entities archived. |
+| `unarchived` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | Entities restored. |
+| `ignored` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | Database entities absent from configuration. |
+| `errors` | <code><a href="#ConfigSyncError">ConfigSyncError</a>[]</code> | Yes | Not applicable | Failures recorded while applying individual changes. |
+| `warnings` | <code><a href="#ConfigSyncWarning">ConfigSyncWarning</a>[]</code> | Yes | Not applicable | Nonfatal skipped references or values. |
+| `details` | <code><a href="#AccountingSyncReport">AccountingSyncReport</a> \| undefined</code> | No | Not applicable | Detailed before/after accounting-configuration changes; may be absent. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Created` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | New core catalog entities. |
+| `Updated` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | Changed core catalog entities. |
+| `Archived` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | Entities archived. |
+| `Unarchived` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | Entities restored. |
+| `Ignored` | <code><a href="#ConfigSyncCounts">ConfigSyncCounts</a></code> | Yes | Not applicable | Database entities absent from configuration. |
+| `Errors` | <code>List&lt;<a href="#ConfigSyncError">ConfigSyncError</a>&gt;</code> | Yes | Not applicable | Failures recorded while applying individual changes. |
+| `Warnings` | <code>List&lt;<a href="#ConfigSyncWarning">ConfigSyncWarning</a>&gt;</code> | Yes | Not applicable | Nonfatal skipped references or values. |
+| `Details` | <code><a href="#AccountingSyncReport">AccountingSyncReport</a>?</code> | Yes | Not applicable | Detailed before/after accounting-configuration changes; may be absent. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### FeatureConfig { #FeatureConfig }
+
+Nested feature definition.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Stable identifier. |
+| `displayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `valueType` | <code>&quot;toggle&quot; \| &quot;numeric&quot; \| &quot;text&quot; \| &quot;metered&quot;</code> | Yes | None | toggle, numeric, text, or metered. |
+| `defaultValue` | <code>string</code> | Yes | None | String default matching the value type. |
+| `description` | <code>string \| undefined</code> | No | None | Optional description, up to 1,000 characters. |
+| `groupName` | <code>string \| undefined</code> | No | None | Optional feature grouping label. |
+| `meteredConfig` | <code><a href="../features/#MeteredFeatureConfigDto">MeteredFeatureConfigDto</a> \| undefined</code> | No | None | Complete [metering configuration](features.md#MeteredFeatureConfigDto); required only for metered features. |
+| `validator` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Optional feature validator configuration. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Application-defined metadata. |
+| `creditConsumptionRules` | <code>Array&lt;{ currencyKey: string; creditsPerUnit: number }&gt; \| undefined</code> | No | None | When supplied, replaces costs for this feature; an empty array removes its costs. |
+| `archived` | <code>boolean \| undefined</code> | No | None | true archives, false restores, omission preserves existing status. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Stable identifier. |
+| `DisplayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `Description` | <code>string?</code> | No | null | Optional description, up to 1,000 characters. |
+| `ValueType` | <code>string</code> | No | "toggle" | toggle, numeric, text, or metered. |
+| `DefaultValue` | <code>string</code> | No | "false" | String default matching the value type. |
+| `GroupName` | <code>string?</code> | No | null | Optional feature grouping label. |
+| `Validator` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Optional feature validator configuration. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Application-defined metadata. |
+| `Archived` | <code>bool?</code> | No | null | true archives, false restores, omission preserves existing status. |
+| `MeteredConfig` | <code><a href="../features/#MeteredFeatureConfigDto">MeteredFeatureConfigDto</a>?</code> | No | null | Complete [metering configuration](features.md#MeteredFeatureConfigDto); required only for metered features. |
+| `CreditConsumptionRules` | <code>List&lt;<a href="../credits/#CreditConsumptionRuleDto">CreditConsumptionRuleDto</a>&gt;?</code> | No | null | When supplied, replaces costs for this feature; an empty array removes its costs. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### ProductConfig { #ProductConfig }
+
+Nested product definition.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Stable identifier. |
+| `displayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `description` | <code>string \| undefined</code> | No | None | Optional description, up to 1,000 characters. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Application-defined metadata. |
+| `addons` | <code><a href="#AddonConfig">AddonConfig</a>[] \| undefined</code> | No | None | Add-on definitions for this product; omitted add-ons are retained. |
+| `featureResolution` | <code>Record&lt;string, <a href="../products/#FeatureResolutionOptions">FeatureResolutionOptions</a>&gt; \| undefined</code> | No | None | Feature-key map of [resolution options](products.md#FeatureResolutionOptions) applied to associated features. Omitted entries preserve current rules. |
+| `archived` | <code>boolean \| undefined</code> | No | None | true archives, false restores, omission preserves existing status. |
+| `features` | <code>string[] \| undefined</code> | No | None | When supplied, replaces product-feature associations; an empty array dissociates all features. |
+| `plans` | <code><a href="#PlanConfig">PlanConfig</a>[] \| undefined</code> | No | None | Plans to create or update; omitted plans are retained. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Stable identifier. |
+| `DisplayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `Description` | <code>string?</code> | No | null | Optional description, up to 1,000 characters. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Application-defined metadata. |
+| `Archived` | <code>bool?</code> | No | null | true archives, false restores, omission preserves existing status. |
+| `Features` | <code>List&lt;string&gt;?</code> | No | null | When supplied, replaces product-feature associations; an empty array dissociates all features. |
+| `Plans` | <code>List&lt;<a href="#PlanConfig">PlanConfig</a>&gt;?</code> | No | null | Plans to create or update; omitted plans are retained. |
+| `Addons` | <code>List&lt;<a href="#AddonConfig">AddonConfig</a>&gt;?</code> | No | null | Add-on definitions for this product; omitted add-ons are retained. |
+| `FeatureResolution` | <code>Dictionary&lt;string, <a href="../products/#FeatureResolutionOptions">FeatureResolutionOptions</a>&gt;?</code> | No | null | Feature-key map of [resolution options](products.md#FeatureResolutionOptions) applied to associated features. Omitted entries preserve current rules. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### PlanConfig { #PlanConfig }
+
+Nested plan definition.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Stable identifier. |
+| `displayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `description` | <code>string \| undefined</code> | No | None | Optional description, up to 1,000 characters. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Application-defined metadata. |
+| `onExpireTransitionToBillingCycleKey` | <code>string \| undefined</code> | No | None | Expiration-transition target; see [PlanConfig](#PlanConfig) details below. |
+| `archived` | <code>boolean \| undefined</code> | No | None | true archives, false restores, omission preserves existing status. |
+| `creditGrants` | <code>Array&lt;{ currencyKey: string; amount: number; cadence: &quot;once&quot; \| &quot;monthly&quot; \| &quot;yearly&quot; \| &quot;billing_period&quot;; expiryPolicy?: &quot;none&quot; \| &quot;grant_period_end&quot;; cancellationPolicy?: &quot;retain&quot; \| &quot;expire&quot; }&gt; \| undefined</code> | No | None | When supplied, replaces active currency grant rules for this plan. An empty array deactivates them; issued grants remain. |
+| `featureValues` | <code>Record&lt;string, string&gt; \| undefined</code> | No | None | When supplied, replaces plan feature values; an empty map removes all plan values. |
+| `billingCycles` | <code><a href="#BillingCycleConfig">BillingCycleConfig</a>[] \| undefined</code> | No | None | Billing cycles to create or update; omitted cycles are retained. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Stable identifier. |
+| `DisplayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `Description` | <code>string?</code> | No | null | Optional description, up to 1,000 characters. |
+| `OnExpireTransitionToBillingCycleKey` | <code>string?</code> | No | null | Expiration-transition target; see [PlanConfig](#PlanConfig) details below. |
+| `FeatureValues` | <code>Dictionary&lt;string, string&gt;?</code> | No | null | When supplied, replaces plan feature values; an empty map removes all plan values. |
+| `BillingCycles` | <code>List&lt;<a href="#BillingCycleConfig">BillingCycleConfig</a>&gt;?</code> | No | null | Billing cycles to create or update; omitted cycles are retained. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Application-defined metadata. |
+| `Archived` | <code>bool?</code> | No | null | true archives, false restores, omission preserves existing status. |
+| `CreditGrants` | <code>List&lt;<a href="../credits/#PlanCreditGrantDto">PlanCreditGrantDto</a>&gt;?</code> | No | null | When supplied, replaces active currency grant rules for this plan. An empty array deactivates them; issued grants remain. |
+
+</div>
+
+</div>
+
+Transition targets must belong to the same product. TypeScript validates that the target is present in this configuration's nested billing cycles. When an existing plan is included without a transition target, synchronization clears its saved target. Include the target to preserve it; omitting the plan entirely leaves it unchanged.
+
+<div class="data-type" markdown="1">
+
+### BillingCycleConfig { #BillingCycleConfig }
+
+Nested billingcycle definition.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Stable identifier. |
+| `displayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `durationUnit` | <code>&quot;days&quot; \| &quot;weeks&quot; \| &quot;months&quot; \| &quot;years&quot; \| &quot;forever&quot;</code> | Yes | None | days, weeks, months, years, or forever. |
+| `description` | <code>string \| undefined</code> | No | None | Optional description, up to 1,000 characters. |
+| `durationValue` | <code>number \| undefined</code> | No | None | Positive count required for a finite duration; omit for forever. |
+| `externalProductId` | <code>string \| undefined</code> | No | None | External payment-provider price identifier. |
+| `archived` | <code>boolean \| undefined</code> | No | None | true archives, false restores, omission preserves existing status. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Stable identifier. |
+| `DisplayName` | <code>string</code> | Yes | None | Human-readable label, 1 to 255 characters. |
+| `Description` | <code>string?</code> | No | null | Optional description, up to 1,000 characters. |
+| `DurationValue` | <code>int?</code> | No | null | Positive count required for a finite duration; omit for forever. |
+| `DurationUnit` | <code>string</code> | No | "days" | days, weeks, months, years, or forever. |
+| `ExternalProductId` | <code>string?</code> | No | null | External payment-provider price identifier. |
+| `Archived` | <code>bool?</code> | No | null | true archives, false restores, omission preserves existing status. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### CreditCurrencyConfig { #CreditCurrencyConfig }
+
+Currency input; TypeScript uses an inline shape.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Currency key. |
+| `displayName` | <code>string</code> | Yes | None | Nonblank label. |
+| `archived` | <code>boolean</code> | No | None | true archives, false restores, omission preserves existing status. |
+| `metadata` | <code>Record&lt;string, unknown&gt;</code> | No | None | Replacement application metadata. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Currency key. |
+| `DisplayName` | <code>string</code> | Yes | None | Nonblank label. |
+| `Archived` | <code>bool?</code> | No | null | true archives, false restores, omission preserves existing status. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Replacement application metadata. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### AddonConfig { #AddonConfig }
+
+Add-on input; TypeScript uses an inline shape and the parent supplies the product key.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Add-on key. |
+| `displayName` | <code>string</code> | Yes | None | Nonblank label. |
+| `description` | <code>string</code> | No | None | Optional description. |
+| `compositionMode` | <code>&quot;additive&quot; \| &quot;override&quot;</code> | No | None | How the add-on contributes; additive on creation when omitted. |
+| `priority` | <code>number</code> | No | None | Replacement priority, lower first; defaults to zero on creation. |
+| `archived` | <code>boolean</code> | No | None | true archives, false restores, omission preserves existing status. |
+| `metadata` | <code>Record&lt;string, unknown&gt;</code> | No | None | Replacement application metadata. |
+| `featureValues` | <code>Record&lt;string, string&gt;</code> | No | None | Supplied feature-key/value map replaces the existing map; an empty map clears all stored contributions. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Add-on key. |
+| `DisplayName` | <code>string</code> | Yes | None | Nonblank label. |
+| `Description` | <code>string?</code> | No | null | Optional description. |
+| `CompositionMode` | <code>string?</code> | No | null | How the add-on contributes; additive on creation when omitted. |
+| `Priority` | <code>int?</code> | No | null | Replacement priority, lower first; defaults to zero on creation. |
+| `Archived` | <code>bool?</code> | No | null | true archives, false restores, omission preserves existing status. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Replacement application metadata. |
+| `FeatureValues` | <code>Dictionary&lt;string, string&gt;?</code> | No | null | Supplied feature-key/value map replaces the existing map; an empty map clears all stored contributions. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### CreditConsumptionConfig { #CreditConsumptionConfig }
+
+Root feature cost rule; TypeScript uses an inline shape.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `featureKey` | <code>string</code> | Yes | None | Non-metered feature key. |
+| `currencyKey` | <code>string</code> | Yes | None | Active credit currency key. |
+| `creditsPerUnit` | <code>number</code> | Yes | None | Positive safe integer cost per action unit. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `FeatureKey` | <code>string</code> | Yes | None | Non-metered feature key. |
+| `CurrencyKey` | <code>string</code> | Yes | None | Active credit currency key. |
+| `CreditsPerUnit` | <code>long</code> | Yes | None | Positive safe integer cost per action unit. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### SubscriptionOverrideConfig { #SubscriptionOverrideConfig }
+
+Changes to an existing subscription; TypeScript uses an inline shape.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Existing unarchived subscription key. |
+| `featureOverrides` | <code><a href="#FeatureOverrideConfig">FeatureOverrideConfig</a>[]</code> | Yes | None | Explicit changes only; omitted overrides are retained. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Existing unarchived subscription key. |
+| `FeatureOverrides` | <code>List&lt;<a href="#FeatureOverrideConfig">FeatureOverrideConfig</a>&gt;</code> | Yes | None | Explicit changes only; omitted overrides are retained. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### FeatureOverrideConfig { #FeatureOverrideConfig }
+
+One override change. TypeScript accepts either a removal object or a value-setting object.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `featureKey` | <code>string</code> | Yes | None | Feature key. |
+| `remove` | <code>boolean</code> | No | None | true removes the override and permits only featureKey and remove in TypeScript. Omit or false to set. |
+| `value` | <code>string</code> | No | None | Required unless removing; must match the feature type. |
+| `type` | <code>&quot;permanent&quot; \| &quot;temporary&quot; \| &quot;timed&quot;</code> | No | None | Required unless removing. |
+| `expiresAt` | <code>string \| null</code> | No | None | Future UTC timestamp required for timed; omit or null otherwise. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `FeatureKey` | <code>string</code> | Yes | None | Feature key. |
+| `Value` | <code>string?</code> | No | null | Required unless removing; must match the feature type. |
+| `Type` | <code>string?</code> | No | null | Required unless removing. |
+| `ExpiresAt` | <code>DateTime?</code> | No | null | Future UTC timestamp required for timed; omit or null otherwise. |
+| `Remove` | <code>bool</code> | No | false | true removes the override and permits only featureKey and remove in TypeScript. Omit or false to set. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### ConfigSyncCounts { #ConfigSyncCounts }
+
+Core entity counters; an inline object in TypeScript.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `features` | <code>number</code> | Yes | Not applicable | Count of features. |
+| `products` | <code>number</code> | Yes | Not applicable | Count of products. |
+| `plans` | <code>number</code> | Yes | Not applicable | Count of plans. |
+| `billingCycles` | <code>number</code> | Yes | Not applicable | Count of billingCycles. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Features` | <code>int</code> | Yes | Not applicable | Count of features. |
+| `Products` | <code>int</code> | Yes | Not applicable | Count of products. |
+| `Plans` | <code>int</code> | Yes | Not applicable | Count of plans. |
+| `BillingCycles` | <code>int</code> | Yes | Not applicable | Count of billingCycles. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### ConfigSyncError { #ConfigSyncError }
+
+One report message; an inline object in TypeScript.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `entityType` | <code>&quot;feature&quot; \| &quot;product&quot; \| &quot;plan&quot; \| &quot;billingCycle&quot; \| &quot;entitlement&quot;</code> | Yes | Not applicable | Wire category of the affected operation. |
+| `key` | <code>string</code> | Yes | Not applicable | Affected entity key. |
+| `message` | <code>string</code> | Yes | Not applicable | Failure or warning explanation. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `EntityType` | <code>string</code> | Yes | Not applicable | Wire category of the affected operation. |
+| `Key` | <code>string</code> | Yes | Not applicable | Affected entity key. |
+| `Message` | <code>string</code> | Yes | Not applicable | Failure or warning explanation. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### ConfigSyncWarning { #ConfigSyncWarning }
+
+One report message; an inline object in TypeScript.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `entityType` | <code>&quot;feature&quot; \| &quot;product&quot; \| &quot;plan&quot; \| &quot;billingCycle&quot; \| &quot;entitlement&quot;</code> | Yes | Not applicable | Wire category of the affected operation. |
+| `key` | <code>string</code> | Yes | Not applicable | Affected entity key. |
+| `message` | <code>string</code> | Yes | Not applicable | Failure or warning explanation. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `EntityType` | <code>string</code> | Yes | Not applicable | Wire category of the affected operation. |
+| `Key` | <code>string</code> | Yes | Not applicable | Affected entity key. |
+| `Message` | <code>string</code> | Yes | Not applicable | Failure or warning explanation. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### AccountingSyncReport { #AccountingSyncReport }
+
+Configuration comparison; an inline object in TypeScript.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `created` | <code>number</code> | Yes | Not applicable | Configuration entries added. |
+| `updated` | <code>number</code> | Yes | Not applicable | Entries changed. |
+| `removed` | <code>number</code> | Yes | Not applicable | Entries removed. |
+| `unchanged` | <code>number</code> | Yes | Not applicable | Entries unchanged. |
+| `changes` | <code><a href="#AccountingSyncChange">AccountingSyncChange</a>[]</code> | Yes | Not applicable | Individual configuration changes. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Created` | <code>int</code> | Yes | Not applicable | Configuration entries added. |
+| `Updated` | <code>int</code> | Yes | Not applicable | Entries changed. |
+| `Removed` | <code>int</code> | Yes | Not applicable | Entries removed. |
+| `Unchanged` | <code>int</code> | Yes | Not applicable | Entries unchanged. |
+| `Changes` | <code>List&lt;<a href="#AccountingSyncChange">AccountingSyncChange</a>&gt;</code> | Yes | Not applicable | Individual configuration changes. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+### AccountingSyncChange { #AccountingSyncChange }
+
+One configuration change; an inline object in TypeScript.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `entityType` | <code>string</code> | Yes | Not applicable | Affected configuration kind. |
+| `key` | <code>string</code> | Yes | Not applicable | Configuration entry identifier. |
+| `action` | <code>string</code> | Yes | Not applicable | created, updated, removed, or unchanged. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `EntityType` | <code>string</code> | Yes | Not applicable | Affected configuration kind. |
+| `Key` | <code>string</code> | Yes | Not applicable | Configuration entry identifier. |
+| `Action` | <code>string</code> | Yes | Not applicable | created, updated, removed, or unchanged. |
+
+</div>
+
+</div>
+
+## Related guides
+
+- [Subscrio](core-overview.md): initialization and initial configuration.
+- [Features](features.md): values and metering settings.
+- [Add-ons](addons.md): feature contributions.
+- [Credits](credits.md): grant and consumption rules.
+- [Subscriptions](subscriptions.md): override lifetime and restrictions.

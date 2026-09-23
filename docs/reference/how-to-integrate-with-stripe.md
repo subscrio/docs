@@ -1,378 +1,156 @@
 ---
-title: How to integrate with Stripe
-description: Map Stripe prices and customers to Subscrio records, then forward verified webhook events so subscriptions stay in sync.
+title: Stripe Setup
+description: Map Stripe prices and verified webhook events to customer subscriptions.
 ---
 
-# How to Integrate with Stripe
+# Stripe Setup
 
-This guide walks through the exact steps needed to keep Subscrio and Stripe in sync. The library already contains all of the handlers—your job is to provide the right metadata, map Stripe IDs to Subscrio records, and forward verified events to `subscrio.stripe.processStripeEvent`.
+Subscrio creates Checkout Sessions and translates supported Stripe events into local subscription changes. Your server owns the HTTP endpoint, signature verification, event delivery, and authorization of checkout requests.
 
-## Prerequisites
+<span id="prerequisites"></span>
+<span id="1-map-stripe-prices-to-billing-cycles"></span>
+<span id="2-attach-subscrio-metadata-when-creating-stripe-entities"></span>
+<span id="subscription-linking-behavior"></span>
+<span id="manual-metadata-setup"></span>
+<span id="3-receiving-and-verifying-webhooks"></span>
+<span id="4-required-stripe-events"></span>
+<span id="5-data-requirements-for-security-and-mapping"></span>
+<span id="6-creating-checkout-sessions-recommended"></span>
+<span id="basic-usage"></span>
+<span id="updating-existing-subscriptions"></span>
+<span id="stripe-customer-creation"></span>
+<span id="full-feature-access"></span>
+<span id="stripe-secret-key"></span>
+<span id="7-end-to-end-flow-summary"></span>
+<span id="flow-1-new-subscription-via-checkout-recommended"></span>
+<span id="flow-2-update-existing-subscription-via-checkout"></span>
+<span id="flow-3-manual-stripe-integration"></span>
+<span id="credits-meters-and-stripe-changes"></span>
 
-- The `subscrio` TypeScript package or `Subscrio.Core` .NET package installed and connected to a supported database.
-- `STRIPE_SECRET_KEY` available to the private application code that receives Stripe data (never expose it to a browser interface).
-- Ability to configure Stripe webhooks and create customers/subscriptions via the Stripe API or dashboard.
+## Map the catalog
 
-## 1. Map Stripe prices to billing cycles
+Create the local customer, plan, and billing cycle first. Store the Stripe price ID in the billing cycle's `externalProductId`, despite that property's name. Use Stripe test-mode resources while developing.
 
-Subscrio derives the plan automatically by looking up `BillingCycle.externalProductId` (or `ExternalProductId` in .NET). For every Stripe price ID you sell, create (or update) a billing cycle and store the price ID:
+The example updates the [Getting Started](getting-started.md) billing cycle. Replace the example ID with an actual test price before creating Checkout:
 
-=== "TypeScript"
-    ```typescript
-    await subscrio.billingCycles.createBillingCycle({
-      planKey: 'basic-plan',
-      key: 'basic-monthly',
-      displayName: 'Basic – Monthly',
-      durationValue: 1,
-      durationUnit: 'months',
-      externalProductId: 'price_12345'
-    });
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== ".NET"
-    ```csharp
-    using Subscrio.Core.Application.DTOs;
+```typescript
+await subscrio.billingCycles.updateBillingCycle('starter-monthly', {
+  externalProductId: 'price_replace_with_your_test_price'
+});
+```
 
-    await subscrio.BillingCycles.CreateBillingCycleAsync(new CreateBillingCycleDto(
-        PlanKey: "basic-plan",
-        Key: "basic-monthly",
-        DisplayName: "Basic – Monthly",
-        DurationValue: 1,
-        DurationUnit: "months",
-        ExternalProductId: "price_12345"
-    ));
-    ```
+</div>
 
-## 2. Attach Subscrio metadata when creating Stripe entities
+<div class="language-content" data-lang="net" markdown="1">
 
-Every Stripe customer **must** include the Subscrio customer key in metadata so webhooks can backfill `externalBillingId`:
+```csharp
+await subscrio.BillingCycles.UpdateBillingCycleAsync("starter-monthly", new UpdateBillingCycleDto(
+    ExternalProductId: "price_replace_with_your_test_price"));
+```
 
-- `subscrioCustomerKey` – required when `Customer.externalBillingId` is blank.
-- `subscrioSubscriptionKey` – optional; use it to **link to an existing Subscrio subscription**. When provided in subscription metadata, the webhook handler will **update the existing subscription** instead of creating a new one.
+</div>
 
-### Subscription Linking Behavior
+Use a distinct mapping for each sellable cycle. The current integration selects the first subscription item/price; a multi-item Stripe subscription is not automatically a bundle of Subscrio plans or add-ons.
 
-When Stripe sends a `customer.subscription.created` webhook, Subscrio handles it as follows:
+## Create Checkout on your server
 
-1. **Check for existing link**: First checks if a subscription with the Stripe subscription ID already exists (already linked).
-2. **Check metadata for existing subscription**: If metadata contains `subscrioSubscriptionKey`, looks up the existing Subscrio subscription by key.
-3. **Update existing subscription**: If found and belongs to the customer, **updates the existing subscription**:
-   - Links the Stripe subscription ID
-   - Updates plan/billing cycle if changed
-   - Preserves existing feature overrides
-   - Updates period dates and status from Stripe
-4. **Create new subscription**: If no existing subscription found, creates a new subscription.
+Authenticate the request and derive the customer key from the authorized account. Do not accept an arbitrary customer key supplied by an untrusted browser. Return the resulting URL to that browser for navigation.
 
-This allows you to:
-- **Upgrade/downgrade subscriptions**: Pass existing `subscriptionKey` when creating checkout to update the subscription
-- **Link Stripe subscriptions to existing Subscrio subscriptions**: Use metadata to connect Stripe subscriptions to subscriptions created outside Stripe
+<div class="language-content" data-lang="ts" markdown="1">
 
-### Manual Metadata Setup
+```typescript
+const checkout = await subscrio.stripe.createCheckoutSession({
+  customerKey: 'acme', billingCycleKey: 'starter-monthly',
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY!,
+  successUrl: 'https://app.example.com/billing/success',
+  cancelUrl: 'https://app.example.com/billing/cancel'
+});
+console.log(checkout.url);
+```
 
-Example when creating a Stripe customer (same metadata keys for both):
+</div>
 
-=== "TypeScript"
-    ```typescript
-    await stripe.customers.create({
-      email: 'user@example.com',
-      metadata: {
-        subscrioCustomerKey: 'customer_acme_corp'
-      }
-    });
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    ```csharp
-    await stripeService.Customers.CreateAsync(new CustomerCreateOptions
-    {
-        Email = "user@example.com",
-        Metadata = new Dictionary<string, string>
-        {
-            ["subscrioCustomerKey"] = "customer_acme_corp"
-        }
-    });
-    ```
+```csharp
+var checkout = await subscrio.Stripe.CreateCheckoutSessionAsync(
+    customerKey: "acme", billingCycleKey: "starter-monthly",
+    successUrl: "https://app.example.com/billing/success",
+    cancelUrl: "https://app.example.com/billing/cancel",
+    stripeSecretKey: Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY"));
+Console.WriteLine(checkout.Url);
+```
 
-When you create a Stripe subscription (through Checkout, Billing Portal, or the API), make sure the subscription metadata includes:
-- `subscrioCustomerKey` (required)
-- `subscrioSubscriptionKey` (optional, to link to existing subscription)
+</div>
 
-## 3. Receiving and verifying webhooks
+The helper reuses the customer's external billing ID or creates a Stripe customer and saves the link. It supplies `subscrioCustomerKey` metadata on Checkout and the Stripe subscription. Keep API and webhook secrets in server configuration.
 
-Your HTTP endpoint must:
+An optional `subscriptionKey` links the resulting Stripe subscription to an existing local subscription. Checkout still creates a Stripe subscription; it does not edit or cancel an existing paid Stripe subscription. Use your Stripe billing-change workflow for that case, then process the resulting events.
 
-1. Read the **raw** request body (do not JSON-parse first).
-2. Verify the signature with Stripe's SDK.
-3. Pass the verified event to Subscrio's Stripe service.
+Do not overwrite Subscrio's linking metadata. TypeScript's `stripeOptions` is merged after generated Checkout options and can replace required settings. Quantity, trials, promotion codes, and other supported parameters are documented in [Stripe Integration](stripe-integration.md).
 
-=== "TypeScript (Express)"
-    ```typescript
-    import express from 'express';
-    import Stripe from 'stripe';
-    import { Subscrio } from 'subscrio';
+## Verify and process webhooks
 
-    const app = express();
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-    const subscrio = new Subscrio({ database: { connectionString: process.env.DATABASE_URL! } });
+Read the unchanged request body and the `Stripe-Signature` header. Verify before passing an event into Subscrio; its process method does not verify a signature. These framework-independent handlers use the installed Stripe SDK:
 
-    app.post('/webhooks/stripe',
-      express.raw({ type: 'application/json' }),
-      async (req, res) => {
-        try {
-          const sig = req.headers['stripe-signature']!;
-          const event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
-          await subscrio.stripe.processStripeEvent(event);
-          res.json({ received: true });
-        } catch (error) {
-          console.error('Stripe webhook error:', error);
-          res.status(400).json({ error: 'Invalid webhook payload' });
-        }
-      }
-    );
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== ".NET (ASP.NET Core)"
-    ```csharp
-    using Stripe;
-    using Subscrio.Core;
+```typescript
+import Stripe from 'stripe';
 
-    app.MapPost("/webhooks/stripe", async (HttpContext context, Subscrio subscrio) =>
-    {
-        using var reader = new StreamReader(context.Request.Body);
-        var body = await reader.ReadToEndAsync();
-        var sig = context.Request.Headers["Stripe-Signature"].ToString();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+async function processVerifiedWebhook(rawBody: string, signature: string): Promise<void> {
+  const event = stripe.webhooks.constructEvent(
+    rawBody, signature, process.env.STRIPE_WEBHOOK_SECRET!
+  );
+  await subscrio.stripe.processStripeEvent(event);
+}
+// Call processVerifiedWebhook from your endpoint with the unchanged body and header.
+```
 
-        var stripeEvent = EventUtility.ConstructEvent(body, sig, webhookSecret);
-        await subscrio.Stripe.ProcessStripeEventAsync(stripeEvent);
+</div>
 
-        return Results.Ok(new { received = true });
-    }).DisableAntiforgery();  // Webhooks need raw body, disable antiforgery for this route
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-Never call `processStripeEvent` / `ProcessStripeEventAsync` with unverified JSON—Subscrio assumes the payload is genuine once it reaches the service.
+```csharp
+async Task ProcessVerifiedWebhook(string rawBody, string signature)
+{
+    var stripeEvent = Stripe.EventUtility.ConstructEvent(
+        rawBody, signature, Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET")!);
+    await subscrio.Stripe.ProcessStripeEventAsync(stripeEvent);
+}
+// Call ProcessVerifiedWebhook from your endpoint with the unchanged body and header.
+```
 
-## 4. Required Stripe events
+</div>
 
-Subscribe to the following event types in the Stripe dashboard (or CLI). They are the only ones that mutate Subscrio data:
+Your endpoint calls the handler, acknowledges successful processing, and distinguishes an invalid signature from a processing failure. If your framework parses JSON globally, preserve the original body for this route. The TypeScript library also provides `constructStripeEvent`; .NET provides the helper on `StripeConfig`, not on `subscrio.Stripe`.
 
-| Event | What Subscrio does |
+Subscrio does not persist a processed-event inbox, deduplicate every webhook by event ID, or enforce delivery order. Build retry, duplicate, and stale-event handling around the endpoint. Do not mark an event complete before processing succeeds, and account for after-hook failures that happen after a write committed.
+
+## Subscribe to supported events
+
+| Event | Local effect |
 | --- | --- |
-| `customer.created` / `customer.updated` | Looks up customers by `externalBillingId` or `subscrioCustomerKey` metadata and backfills the Stripe customer ID. |
-| `customer.deleted` | Clears `externalBillingId` so future provisioning can recreate the link. |
-| `customer.subscription.created` | Resolves the mapped billing cycle/plan. If metadata contains `subscrioSubscriptionKey`, updates existing subscription; otherwise creates new subscription. |
-| `customer.subscription.updated` | Updates plan/billing-cycle references, trial dates, cancellation status, and billing periods. |
-| `customer.subscription.deleted` | Expires the subscription locally. |
-| `invoice.payment_succeeded` | Updates `currentPeriodStart`/`currentPeriodEnd` from the invoice line period once payment clears. |
+| `customer.created`, `customer.updated` | Resolve the existing local customer and record its Stripe ID. |
+| `customer.deleted` | Clear the external customer ID; retain the local customer. |
+| `customer.subscription.created` | Create a mapped subscription or update the local subscription named in metadata. |
+| `customer.subscription.updated` | Update the mapped plan/cycle and lifecycle or period information. |
+| `customer.subscription.deleted` | End the matching local subscription without deleting its history. |
+| `invoice.payment_succeeded` | Update the matching subscription's period from the invoice. |
 
-## 5. Data requirements for security and mapping
+Other event types have no core subscription handler. Stripe before/after hooks can still receive them. Subscrio's status is calculated from dates; it is not a direct copy of Stripe's status string. Review [Subscription Lifecycle](subscription-lifecycle.md), especially scheduled cancellation.
 
-- **Database** – ensure every billing cycle that can be sold via Stripe has `externalProductId` set to the Stripe price ID.
-- **Metadata** – always include `subscrioCustomerKey` (and optionally `subscrioSubscriptionKey`). Missing metadata causes `NotFoundError` so you can detect misconfigured flows quickly.
-- **Secrets** – keep `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in private application configuration, never in browser-delivered code.
+## Link manually created Stripe records
 
-## 6. Creating Checkout Sessions (Recommended)
+When bypassing the Checkout helper, add `subscrioCustomerKey` to the Stripe subscription metadata and, when linking an existing local subscription, `subscrioSubscriptionKey`. Customer lookup can also use an already-stored external ID. Missing or inconsistent mappings can fail processing; they do not create arbitrary local customers on demand.
 
-The easiest way to create Stripe Checkout links is using `subscrio.stripe.createCheckoutSession()`. This method:
-- **Automatically creates Stripe customers** if they don't exist
-- Sets all required metadata for webhook reconciliation
-- Supports linking to existing subscriptions for upgrades/downgrades
+Creating a remote customer/session and saving local links are not one database transaction. Reconcile remote results if a later step fails instead of repeatedly creating Checkout Sessions.
 
-### Basic Usage
+## Connect accounting and extensions
 
-=== "TypeScript"
-    ```typescript
-    // Create checkout for new subscription
-    const { url, sessionId } = await subscrio.stripe.createCheckoutSession({
-      customerKey: 'customer_123',
-      billingCycleKey: 'pro-monthly',
-      successUrl: 'https://yourapp.com/success',
-      cancelUrl: 'https://yourapp.com/cancel'
-    });
+Stripe subscription changes use the library's accounting coordination. Keep billing dates current for billing-period meters and grants. Invoice success does not automatically buy an add-on or top up a credit wallet. Map confirmed purchases explicitly and use a payment-derived idempotency key when granting credits.
 
-    // Redirect user to checkout
-    window.location.href = url;
-    ```
-
-=== ".NET"
-    ```csharp
-    var (url, sessionId) = await subscrio.Stripe.CreateCheckoutSessionAsync(
-        customerKey: "customer_123",
-        billingCycleKey: "pro-monthly",
-        successUrl: "https://yourapp.com/success",
-        cancelUrl: "https://yourapp.com/cancel"
-    );
-
-    return Redirect(url);
-    ```
-
-### Updating Existing Subscriptions
-
-To upgrade/downgrade an existing subscription, pass the `subscriptionKey`:
-
-=== "TypeScript"
-    ```typescript
-    // Update existing subscription (change plan/billing cycle)
-    const { url } = await subscrio.stripe.createCheckoutSession({
-      customerKey: 'customer_123',
-      billingCycleKey: 'pro-annual',      // New billing cycle
-      subscriptionKey: 'sub_456',          // Existing subscription to update
-      successUrl: 'https://yourapp.com/success',
-      cancelUrl: 'https://yourapp.com/cancel'
-    });
-
-    // When checkout completes, webhook will:
-    // 1. Find subscription 'sub_456' via metadata
-    // 2. Update it with new plan/billing cycle
-    // 3. Link the Stripe subscription ID
-    ```
-
-=== ".NET"
-    ```csharp
-    // Update existing subscription (change plan/billing cycle)
-    var (url, _) = await subscrio.Stripe.CreateCheckoutSessionAsync(
-        customerKey: "customer_123",
-        billingCycleKey: "pro-annual",
-        successUrl: "https://yourapp.com/success",
-        cancelUrl: "https://yourapp.com/cancel",
-        subscriptionKey: "sub_456"
-    );
-
-    // When checkout completes, webhook will:
-    // 1. Find subscription 'sub_456' via metadata
-    // 2. Update it with new plan/billing cycle
-    // 3. Link the Stripe subscription ID
-    return Redirect(url);
-    ```
-
-### Stripe Customer Creation
-
-**Important**: `createCheckoutSession` automatically creates Stripe customers if they don't exist. You don't need to create them manually.
-
-- If customer has `externalBillingId`: Uses existing Stripe customer
-- If customer doesn't have `externalBillingId`: Creates new Stripe customer with `subscrioCustomerKey` metadata
-- Updates customer email/name if provided in parameters
-
-### Full Feature Access
-
-The method supports Stripe Checkout options including quantity, trial, metadata, and promotion codes. TypeScript also supports `stripeOptions` for full Stripe API access.
-
-=== "TypeScript"
-    ```typescript
-    const { url } = await subscrio.stripe.createCheckoutSession({
-      customerKey: 'customer_123',
-      billingCycleKey: 'pro-monthly',
-      successUrl: 'https://yourapp.com/success',
-      cancelUrl: 'https://yourapp.com/cancel',
-      quantity: 2,                        // Subscription quantity
-      customerEmail: 'user@example.com',  // Pre-fill email
-      allowPromotionCodes: true,          // Enable promo codes
-      trialPeriodDays: 14,                // 14-day trial
-      metadata: {                         // Custom metadata
-        campaign: 'summer2024'
-      },
-      stripeOptions: {                    // Full Stripe API access
-        phone_number_collection: { enabled: true },
-        consent_collection: { terms_of_service: 'required' }
-      }
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    var (url, _) = await subscrio.Stripe.CreateCheckoutSessionAsync(
-        customerKey: "customer_123",
-        billingCycleKey: "pro-monthly",
-        successUrl: "https://yourapp.com/success",
-        cancelUrl: "https://yourapp.com/cancel",
-        quantity: 2,
-        customerEmail: "user@example.com",
-        allowPromotionCodes: true,
-        trialPeriodDays: 14,
-        metadata: new Dictionary<string, string> { ["campaign"] = "summer2024" }
-    );
-    return Redirect(url);
-    ```
-
-### Stripe Secret Key
-
-The Stripe secret key can be provided in two ways:
-1. **Config**: Set `config.stripe.secretKey` when creating Subscrio instance
-2. **Parameter**: Pass `stripeSecretKey` to `createCheckoutSession` (takes precedence)
-
-=== "TypeScript"
-    ```typescript
-    // Option 1: Via config
-    const subscrio = new Subscrio({
-      database: { connectionString: process.env.DATABASE_URL! },
-      stripe: { secretKey: process.env.STRIPE_SECRET_KEY! }
-    });
-
-    // Option 2: Via parameter (overrides config)
-    const { url } = await subscrio.stripe.createCheckoutSession({
-      customerKey: 'customer_123',
-      billingCycleKey: 'pro-monthly',
-      stripeSecretKey: process.env.STRIPE_SECRET_KEY!,
-      successUrl: 'https://yourapp.com/success',
-      cancelUrl: 'https://yourapp.com/cancel'
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    // Option 1: Via config
-    var subscrio = new Subscrio(new SubscrioConfig
-    {
-        Database = new DatabaseConfig { ConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL")! },
-        Stripe = new StripeConfig { SecretKey = Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY")! }
-    });
-
-    // Option 2: Via parameter (overrides config)
-    var (url, _) = await subscrio.Stripe.CreateCheckoutSessionAsync(
-        customerKey: "customer_123",
-        billingCycleKey: "pro-monthly",
-        successUrl: "https://yourapp.com/success",
-        cancelUrl: "https://yourapp.com/cancel",
-        stripeSecretKey: Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY")
-    );
-    return Redirect(url);
-    ```
-
-## 7. End-to-end flow summary
-
-### Flow 1: New Subscription via Checkout (Recommended)
-
-1. Create the customer in Subscrio (stores the canonical customer key).
-2. Call `createCheckoutSession()` - **automatically creates Stripe customer** if needed.
-3. Redirect user to checkout URL.
-4. User completes checkout in Stripe.
-5. Stripe emits `customer.subscription.created` webhook.
-6. Subscrio webhook handler **creates new subscription** and links Stripe subscription ID.
-7. Future renewals/cancellations sync via webhooks.
-
-### Flow 2: Update Existing Subscription via Checkout
-
-1. Customer has existing Subscrio subscription (not linked to Stripe).
-2. Call `createCheckoutSession()` with `subscriptionKey` parameter.
-3. Redirect user to checkout URL.
-4. User completes checkout in Stripe.
-5. Stripe emits `customer.subscription.created` webhook with `subscrioSubscriptionKey` metadata.
-6. Subscrio webhook handler **finds existing subscription** by key and **updates it**:
-   - Links Stripe subscription ID
-   - Updates plan/billing cycle
-   - Preserves feature overrides
-7. Future renewals/cancellations sync via webhooks.
-
-### Flow 3: Manual Stripe Integration
-
-1. Create the customer in Subscrio (stores the canonical customer key).
-2. Create the same customer in Stripe, passing `subscrioCustomerKey` metadata.
-3. Stripe sends `customer.created`; Subscrio records the Stripe customer ID.
-4. Create/checkout a Stripe subscription whose price matches `BillingCycle.externalProductId` and includes metadata:
-   - `subscrioCustomerKey` (required)
-   - `subscrioSubscriptionKey` (optional, to link to existing subscription)
-5. Stripe emits `customer.subscription.created`; Subscrio:
-   - If `subscrioSubscriptionKey` provided: **updates existing subscription**
-   - If no key provided: **creates new subscription**
-6. Whenever Stripe renews or cancels, the corresponding subscription/invoice webhooks keep Subscrio's data up to date.
-
-With these steps in place, Subscrio automatically mirrors Stripe's lifecycle without any REST API calls—everything stays in process, type-safe, and consistent.
+The invoice handler does not clear temporary overrides. The optional [payments extension](how-to-extend.md#track-successful-stripe-invoices) records mapped successful invoices; it does not replace webhook verification or the core credit ledger.

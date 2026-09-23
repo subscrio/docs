@@ -1,664 +1,1106 @@
 ---
 title: Features
-description: Create, update, archive, and list entitlement features. Features use toggle, numeric, or text values and resolve through override, then plan, then default.
+description: Define, update, retrieve, and archive feature definitions, including metered settings and related add-ons, in TypeScript and .NET.
+reference_format: true
 ---
 
-# Feature Management Service Reference
+# Features
 
-## Service Overview
-The Feature Management Service defines entitlement toggles and typed values that products expose to plans and subscriptions. Features are global and reusable across products once explicitly associated, and they always participate in the resolution hierarchy: subscription override → plan value → feature default.
+## Purpose
 
-- Feature keys are immutable and globally unique.
-- `valueType` determines how defaults, plan values, and overrides are validated (`toggle`, `numeric`, `text`).
-- Features cannot be deleted while referenced by products, plan feature values, or subscription overrides.
+<span id="overview" class="compatibility-anchor"></span>
+<span id="access-typescript" class="compatibility-anchor"></span>
+<span id="access-net" class="compatibility-anchor"></span>
+<span id="method-catalog-typescript" class="compatibility-anchor"></span>
+<span id="method-catalog-net" class="compatibility-anchor"></span>
 
-TypeScript throws `ValidationError`, `NotFoundError`, `ConflictError`, and `DomainError`. .NET throws the matching `ValidationException`, `NotFoundException`, `ConflictException`, and `DomainException`. Potential Errors tables use the TypeScript names.
 
-## Accessing the Service
+A feature defines a capability or limit your products offer: a toggle, a numeric limit, a text setting, or a metered allowance. Define it once, associate it with products, and assign values through plans or subscription overrides. Use [Feature Checker](feature-checker.md) to resolve access and [Metered Usage](metering.md) to record consumption.
 
-=== "TypeScript"
-    ```typescript
-    import { Subscrio } from 'subscrio';
+## Access and initialization { #access-and-initialization }
 
-    const subscrio = new Subscrio({ database: { connectionString: process.env.DATABASE_URL! } });
-    const features = subscrio.features;
-    ```
+### Access
 
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
+<div class="language-content" data-lang="ts" markdown="1">
 
-    var subscrio = new Subscrio(config);
-    var features = subscrio.Features;
-    ```
+```typescript
+const features = subscrio.features;
+```
 
-## Method Catalog
+</div>
 
-=== "TypeScript"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `createFeature` | Validates and stores a new global feature | `Promise<FeatureDto>` |
-    | `updateFeature` | Updates mutable fields on an existing feature | `Promise<FeatureDto>` |
-    | `getFeature` | Retrieves a feature by key | `Promise<FeatureDto \| null>` |
-    | `listFeatures` | Lists features with filters | `Promise<FeatureDto[]>` |
-    | `archiveFeature` | Archives a feature | `Promise<void>` |
-    | `unarchiveFeature` | Restores an archived feature | `Promise<void>` |
-    | `deleteFeature` | Deletes an archived, unreferenced feature | `Promise<void>` |
-    | `getFeaturesByProduct` | Lists features attached to a product | `Promise<FeatureDto[]>` |
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    | Method | Description | Returns |
-    | --- | --- | --- |
-    | `CreateFeatureAsync` | Validates and stores a new global feature | `Task<FeatureDto>` |
-    | `UpdateFeatureAsync` | Updates mutable fields on an existing feature | `Task<FeatureDto>` |
-    | `GetFeatureAsync` | Retrieves a feature by key | `Task<FeatureDto?>` |
-    | `ListFeaturesAsync` | Lists features with filters | `Task<List<FeatureDto>>` |
-    | `ArchiveFeatureAsync` | Archives a feature | `Task` |
-    | `UnarchiveFeatureAsync` | Restores an archived feature | `Task` |
-    | `DeleteFeatureAsync` | Deletes an archived, unreferenced feature | `Task` |
-    | `GetFeaturesByProductAsync` | Lists features attached to a product | `Task<List<FeatureDto>>` |
+```csharp
+using Subscrio.Core.Application.DTOs;
 
-## Method Reference
+var features = subscrio.Features;
+```
 
-### createFeature
+</div>
 
-#### Description
-Creates a new feature, validating keys, default values, and optional metadata before persisting it as `active`.
+## Method catalog
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    createFeature(dto: CreateFeatureDto): Promise<FeatureDto>
-    ```
+Database and connection failures may propagate from any operation. The entries below document method-specific errors.
 
-    #### Inputs
+<div class="language-content" data-lang="ts" markdown="1">
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `dto` | `CreateFeatureDto` | Yes | Feature definition supplied by your app. |
-
-    #### Input Properties
-
-    | Field | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | 1–255 chars, letters, digits, `-`, and `_`. |
-    | `displayName` | `string` | Yes | 1–255 char label. |
-    | `description` | `string` | No | ≤1000 chars. |
-    | `valueType` | `'toggle' \| 'numeric' \| 'text'` | Yes | Controls validation rules. |
-    | `defaultValue` | `string` | Yes | Must conform to `valueType`. |
-    | `groupName` | `string` | No | Optional grouping label. |
-    | `validator` | `Record<string, unknown>` | No | Custom metadata for downstream validation. |
-    | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata blob. |
-
-    #### Returns
-    `Promise<FeatureDto>` – persisted feature snapshot.
-
-    #### Example
-    ```typescript
-    await features.createFeature({
-      key: 'max-projects',
-      displayName: 'Max Projects',
-      valueType: 'numeric',
-      defaultValue: '10'
-    });
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<FeatureDto> CreateFeatureAsync(CreateFeatureDto dto)
-    ```
-
-    #### Inputs
-
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `dto` | `CreateFeatureDto` | Yes | Feature definition supplied by your app. |
-
-    #### Input Properties
-
-    | Property | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `Key` | `string` | Yes | 1–255 chars, letters, digits, `-`, and `_`. |
-    | `DisplayName` | `string` | Yes | 1–255 char label. |
-    | `Description` | `string` | No | ≤1000 chars. |
-    | `ValueType` | `string` | Yes | `toggle`, `numeric`, or `text`. |
-    | `DefaultValue` | `string` | Yes | Must conform to `ValueType`. |
-    | `GroupName` | `string` | No | Optional grouping label. |
-    | `Validator` | `Dictionary<string, object?>` | No | Custom metadata for downstream validation. |
-    | `Metadata` | `Dictionary<string, object?>` | No | JSON-safe metadata blob. |
-
-    #### Returns
-    `Task<FeatureDto>` – persisted feature snapshot.
-
-    #### Example
-    ```csharp
-    await subscrio.Features.CreateFeatureAsync(new CreateFeatureDto(
-        Key: "max-projects",
-        DisplayName: "Max Projects",
-        ValueType: "numeric",
-        DefaultValue: "10"
-    ));
-    ```
-
-#### Expected Results
-- Validates DTO fields and default value using `FeatureValueValidator`.
-- Ensures key uniqueness.
-- Persists feature with `active` status.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | DTO invalid or default mismatches `valueType`. |
-| `ConflictError` | Feature key already exists. |
+| [`createFeature`](#createfeature) | Creates a feature. |
+| [`updateFeature`](#updatefeature) | Updates mutable fields. |
+| [`getFeature`](#getfeature) | Gets one feature or null. |
+| [`listFeatures`](#listfeatures) | Lists matching features. |
+| [`getFeaturesByProduct`](#getfeaturesbyproduct) | Lists a product’s features. |
+| [`archiveFeature`](#archivefeature) | Archives a feature. |
+| [`unarchiveFeature`](#unarchivefeature) | Restores a feature. |
+| [`deleteFeature`](#deletefeature) | Deletes an unused feature. |
 
-### updateFeature
+</div>
 
-#### Description
-Applies partial updates (display name, description, default value, grouping, validator, metadata) to an existing feature.
+<div class="language-content" data-lang="net" markdown="1">
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    updateFeature(key: string, dto: UpdateFeatureDto): Promise<FeatureDto>
-    ```
-
-    #### Inputs
-
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature key to mutate. |
-    | `dto` | `UpdateFeatureDto` | Yes | Partial payload of fields to change. |
-
-    #### Returns
-    `Promise<FeatureDto>` – updated feature snapshot.
-
-    #### Example
-    ```typescript
-    await features.updateFeature('max-projects', {
-      defaultValue: '25',
-      metadata: { tier: 'enterprise' }
-    });
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<FeatureDto> UpdateFeatureAsync(string key, UpdateFeatureDto dto)
-    ```
-
-    #### Inputs
-
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature key to mutate. |
-    | `dto` | `UpdateFeatureDto` | Yes | Partial payload of fields to change. |
-
-    #### Returns
-    `Task<FeatureDto>` – updated feature snapshot.
-
-    #### Example
-    ```csharp
-    await subscrio.Features.UpdateFeatureAsync("max-projects", new UpdateFeatureDto(
-        DefaultValue: "25",
-        Metadata: new Dictionary<string, object?> { ["tier"] = "enterprise" }
-    ));
-    ```
-
-#### Expected Results
-- Validates provided fields and default/valueType compatibility.
-- Loads feature, applies updates, recalculates timestamps, and saves.
-
-#### Potential Errors
-
-| Error | When |
+| Method | Purpose |
 | --- | --- |
-| `ValidationError` | DTO invalid or default fails validation. |
-| `NotFoundError` | Feature key not found. |
+| [`CreateFeatureAsync`](#createfeature) | Creates a feature. |
+| [`UpdateFeatureAsync`](#updatefeature) | Updates mutable fields. |
+| [`GetFeatureAsync`](#getfeature) | Gets one feature or null. |
+| [`ListFeaturesAsync`](#listfeatures) | Lists matching features. |
+| [`GetFeaturesByProductAsync`](#getfeaturesbyproduct) | Lists a product’s features. |
+| [`ArchiveFeatureAsync`](#archivefeature) | Archives a feature. |
+| [`UnarchiveFeatureAsync`](#unarchivefeature) | Restores a feature. |
+| [`DeleteFeatureAsync`](#deletefeature) | Deletes an unused feature. |
 
-### getFeature
+</div>
 
-#### Description
-Retrieves a feature by key, returning `null` when it does not exist.
+## Method details { #method-details }
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    getFeature(key: string): Promise<FeatureDto | null>
-    ```
+<span id="method-reference"></span>
 
-    #### Inputs
+<div class="method-entry" markdown="1">
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature identifier. |
+<span id="createFeature" class="compatibility-anchor"></span>
 
-    #### Returns
-    `Promise<FeatureDto | null>`
+<span id="description" class="compatibility-anchor"></span>
+<span id="description-typescript" class="compatibility-anchor"></span>
+<span id="description-net" class="compatibility-anchor"></span>
+<span id="signature" class="compatibility-anchor"></span>
+<span id="inputs" class="compatibility-anchor"></span>
+<span id="input-properties" class="compatibility-anchor"></span>
+<span id="returns" class="compatibility-anchor"></span>
+<span id="example" class="compatibility-anchor"></span>
+<span id="signature_1" class="compatibility-anchor"></span>
+<span id="inputs_1" class="compatibility-anchor"></span>
+<span id="input-properties_1" class="compatibility-anchor"></span>
+<span id="returns_1" class="compatibility-anchor"></span>
+<span id="example_1" class="compatibility-anchor"></span>
+<span id="expected-results" class="compatibility-anchor"></span>
+<span id="potential-errors" class="compatibility-anchor"></span>
 
-    #### Example
-    ```typescript
-    const feature = await features.getFeature('gantt-charts');
-    ```
+### createFeature { #createfeature data-method-ts="createFeature" data-method-net="CreateFeatureAsync" }
 
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<FeatureDto?> GetFeatureAsync(string key)
-    ```
+Create an active, global feature with a unique key, value type, default value, and optional metering settings. The feature and its settings are saved together; invalid settings cancel the entire operation.
 
-    #### Inputs
+<div class="language-content" data-lang="ts" markdown="1">
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature identifier. |
+<div class="signature" markdown="1">
 
-    #### Returns
-    `Task<FeatureDto?>`
+```typescript
+createFeature(dto: CreateFeatureDto): Promise<FeatureDto>
+```
 
-    #### Example
-    ```csharp
-    var feature = await subscrio.Features.GetFeatureAsync("gantt-charts");
-    ```
+</div>
 
-#### Expected Results
-- Queries repository and maps record to DTO or returns `null`.
+**Parameters**
 
-#### Potential Errors
-- None – missing features return `null`.
+- `dto`: [CreateFeatureDto](#CreateFeatureDto) containing the feature properties to create. Metered features require all four [metering settings](#MeteredFeatureConfigDto); other feature types reject them. A `billing_period` reset requires usage to be tracked per subscription.
 
-### listFeatures
+**Returns** <code><a href="#FeatureDto">FeatureDto</a></code>: The persisted feature snapshot, including related add-ons and any metering configuration.
 
-#### Description
-Lists features with optional filtering, search, and pagination controls.
+**Example**
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    listFeatures(filters?: FeatureFilterDto): Promise<FeatureDto[]>
-    ```
+```typescript
+await features.createFeature({
+  key: 'max-projects',
+  displayName: 'Max Projects',
+  valueType: 'numeric',
+  defaultValue: '10'
+});
+```
 
-    #### Inputs
+<details class="additional-example" markdown="1">
+<summary>Metered feature example</summary>
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `filters` | `FeatureFilterDto` | No | Status, type, group, search, and pagination settings. |
+```typescript
+await subscrio.features.createFeature({
+  key: 'requests', displayName: 'API requests', valueType: 'metered', defaultValue: '0',
+  meteredConfig: { resetPeriod: 'monthly', enforcement: 'hard', aggregation: 'sum', usageScope: 'customer' }
+});
+await subscrio.features.updateFeature('requests', {
+  meteredConfig: { resetPeriod: 'monthly', enforcement: 'soft', aggregation: 'sum', usageScope: 'customer' }
+});
+const feature = await subscrio.features.getFeature('requests');
+console.log(feature?.meteredConfig, feature?.addons);
+```
 
-    #### Returns
-    `Promise<FeatureDto[]>`
+</details>
 
-    #### Example
-    ```typescript
-    const toggles = await features.listFeatures({ valueType: 'toggle', limit: 20 });
-    ```
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
 
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<List<FeatureDto>> ListFeaturesAsync(FeatureFilterDto? filters = null)
-    ```
+- `ValidationError`: Invalid input, default value, or metering configuration.
+- `ConflictError`: The key already exists.
 
-    #### Inputs
+</details>
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `filters` | `FeatureFilterDto` | No | Status, type, group, search, and pagination settings. |
 
-    #### Returns
-    `Task<List<FeatureDto>>`
+</div>
 
-    #### Example
-    ```csharp
-    var toggles = await subscrio.Features.ListFeaturesAsync(new FeatureFilterDto(
-        ValueType: "toggle",
-        Limit: 20
-    ));
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-#### Expected Results
-- Validates filters.
-- Executes query and maps records to DTOs.
+<div class="signature" markdown="1">
 
-#### Potential Errors
+```csharp
+Task<FeatureDto> CreateFeatureAsync(CreateFeatureDto dto)
+```
 
-| Error | When |
-| --- | --- |
-| `ValidationError` | Filters contain invalid values. |
+</div>
 
-### archiveFeature
+**Parameters**
 
-#### Description
-Marks a feature as archived so it cannot be used for new plan values or overrides.
+- `dto`: [CreateFeatureDto](#CreateFeatureDto) containing the feature properties to create. Metered features require all four [metering settings](#MeteredFeatureConfigDto); other feature types reject them. A `billing_period` reset requires usage to be tracked per subscription.
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    archiveFeature(key: string): Promise<void>
-    ```
+**Returns** <code><a href="#FeatureDto">FeatureDto</a></code>: The persisted feature snapshot, including related add-ons and any metering configuration.
 
-    #### Inputs
+**Example**
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature key to archive. |
+```csharp
+await subscrio.Features.CreateFeatureAsync(new CreateFeatureDto(
+    Key: "max-projects",
+    DisplayName: "Max Projects",
+    ValueType: "numeric",
+    DefaultValue: "10"
+));
+```
 
-    #### Returns
-    `Promise<void>`
+<details class="additional-example" markdown="1">
+<summary>Metered feature example</summary>
 
-    #### Example
-    ```typescript
-    await features.archiveFeature('legacy-beta');
-    ```
+```csharp
+await subscrio.Features.CreateFeatureAsync(new("requests", "API requests", "metered", "0",
+    MeteredConfig: new("monthly", "hard", "sum", "customer")));
+await subscrio.Features.UpdateFeatureAsync("requests", new(
+    MeteredConfig: new("monthly", "soft", "sum", "customer")));
+var feature = await subscrio.Features.GetFeatureAsync("requests");
+Console.WriteLine(feature?.MeteredConfig);
+Console.WriteLine(feature?.Addons.Count);
+```
 
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task ArchiveFeatureAsync(string key)
-    ```
+</details>
 
-    #### Inputs
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature key to archive. |
+- `ValidationException`: Invalid input, default value, or metering configuration.
+- `ConflictException`: The key already exists.
 
-    #### Returns
-    `Task`
+</details>
 
-    #### Example
-    ```csharp
-    await subscrio.Features.ArchiveFeatureAsync("legacy-beta");
-    ```
 
-#### Expected Results
-- Loads feature, invokes entity `archive()`, persists status change.
+</div>
 
-#### Potential Errors
+</div>
 
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Feature key missing. |
+<div class="method-entry" markdown="1">
 
-### unarchiveFeature
+<span id="updateFeature" class="compatibility-anchor"></span>
 
-#### Description
-Restores an archived feature back to `active`.
+<span id="description_1" class="compatibility-anchor"></span>
+<span id="description_1-typescript" class="compatibility-anchor"></span>
+<span id="description_1-net" class="compatibility-anchor"></span>
+<span id="signature_2" class="compatibility-anchor"></span>
+<span id="inputs_2" class="compatibility-anchor"></span>
+<span id="returns_2" class="compatibility-anchor"></span>
+<span id="example_2" class="compatibility-anchor"></span>
+<span id="signature_3" class="compatibility-anchor"></span>
+<span id="inputs_3" class="compatibility-anchor"></span>
+<span id="returns_3" class="compatibility-anchor"></span>
+<span id="example_3" class="compatibility-anchor"></span>
+<span id="expected-results_1" class="compatibility-anchor"></span>
+<span id="potential-errors_1" class="compatibility-anchor"></span>
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    unarchiveFeature(key: string): Promise<void>
-    ```
+### updateFeature { #updatefeature data-method-ts="updateFeature" data-method-net="UpdateFeatureAsync" }
 
-    #### Inputs
+Change an existing feature without changing its key. Invalid metering settings cancel the entire update.
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature key previously archived. |
+Once you have recorded usage for a metered feature, you cannot change its feature type, whether usage is tracked per customer or per subscription, how usage is counted, or when usage resets. You can still switch between rejecting usage over the limit (`hard`) and recording it (`soft`).
 
-    #### Returns
-    `Promise<void>`
+Saving a text feature also updates its product associations: add-on rules and any explicitly configured rules for combining subscriptions become `override_wins`. This selects one value by priority instead of combining values. See [How Feature Values Are Calculated](feature-resolution.md) for value priority.
 
-    #### Example
-    ```typescript
-    await features.unarchiveFeature('legacy-beta');
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task UnarchiveFeatureAsync(string key)
-    ```
+<div class="signature" markdown="1">
 
-    #### Inputs
+```typescript
+updateFeature(key: string, dto: UpdateFeatureDto): Promise<FeatureDto>
+```
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature key previously archived. |
+</div>
 
-    #### Returns
-    `Task`
+**Parameters**
 
-    #### Example
-    ```csharp
-    await subscrio.Features.UnarchiveFeatureAsync("legacy-beta");
-    ```
+- `key`: The key identifying the feature, such as `max-projects`.
+- `dto`: [UpdateFeatureDto](#UpdateFeatureDto) containing the feature properties to change. Uses [partial updates](getting-started.md#partial-updates). Update properties do not accept `null`.
 
-#### Expected Results
-- Loads feature, calls `unarchive()`, persists the change.
+**Returns** <code><a href="#FeatureDto">FeatureDto</a></code>: The updated feature snapshot.
 
-#### Potential Errors
+**Example**
 
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Feature key missing. |
+Uses an existing feature with key `max-projects`.
 
-### deleteFeature
+```typescript
+await features.updateFeature('max-projects', {
+  defaultValue: '25',
+  metadata: { tier: 'enterprise' }
+});
+```
 
-#### Description
-Deletes a feature permanently after verifying it is archived and unused.
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    deleteFeature(key: string): Promise<void>
-    ```
+- `ValidationError`: Invalid input, incompatible value, or restricted metering change.
+- `NotFoundError`: The feature does not exist.
 
-    #### Inputs
+</details>
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature targeted for deletion. |
 
-    #### Returns
-    `Promise<void>`
+</div>
 
-    #### Example
-    ```typescript
-    await features.deleteFeature('sunset-flag');
-    ```
+<div class="language-content" data-lang="net" markdown="1">
 
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task DeleteFeatureAsync(string key)
-    ```
+<div class="signature" markdown="1">
 
-    #### Inputs
+```csharp
+Task<FeatureDto> UpdateFeatureAsync(string key, UpdateFeatureDto dto)
+```
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | Feature targeted for deletion. |
+</div>
 
-    #### Returns
-    `Task`
+**Parameters**
 
-    #### Example
-    ```csharp
-    await subscrio.Features.DeleteFeatureAsync("sunset-flag");
-    ```
+- `key`: The key identifying the feature, such as `max-projects`.
+- `dto`: [UpdateFeatureDto](#UpdateFeatureDto) containing the feature properties to change. Uses [partial updates](getting-started.md#partial-updates).
 
-#### Expected Results
-- Loads feature and checks `feature.canDelete()` (must be archived).
-- Ensures no product associations, plan feature values, or subscription overrides remain.
-- Deletes the feature record.
+**Returns** <code><a href="#FeatureDto">FeatureDto</a></code>: The updated feature snapshot.
 
-#### Potential Errors
+**Example**
 
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Feature missing. |
-| `DomainError` | Feature still active or referenced. |
+Uses an existing feature with key `max-projects`.
 
-### getFeaturesByProduct
+```csharp
+await subscrio.Features.UpdateFeatureAsync("max-projects", new UpdateFeatureDto(
+    DefaultValue: "25",
+    Metadata: new Dictionary<string, object?> { ["tier"] = "enterprise" }
+));
+```
 
-#### Description
-Returns all features currently associated with a product.
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
 
-=== "TypeScript"
-    #### Signature
-    ```typescript
-    getFeaturesByProduct(productKey: string): Promise<FeatureDto[]>
-    ```
+- `ValidationException`: Invalid input, incompatible value, or restricted metering change.
+- `NotFoundException`: The feature does not exist.
 
-    #### Inputs
+</details>
 
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `productKey` | `string` | Yes | Product key to inspect. |
-
-    #### Returns
-    `Promise<FeatureDto[]>`
-
-    #### Example
-    ```typescript
-    const productFeatures = await features.getFeaturesByProduct('pro-suite');
-    ```
-
-=== ".NET"
-    #### Signature
-    ```csharp
-    Task<List<FeatureDto>> GetFeaturesByProductAsync(string productKey)
-    ```
-
-    #### Inputs
-
-    | Name | Type | Required | Description |
-    | --- | --- | --- | --- |
-    | `productKey` | `string` | Yes | Product key to inspect. |
-
-    #### Returns
-    `Task<List<FeatureDto>>`
-
-    #### Example
-    ```csharp
-    var productFeatures = await subscrio.Features.GetFeaturesByProductAsync("pro-suite");
-    ```
-
-#### Expected Results
-- Validates the product exists.
-- Queries associations and maps features to DTOs.
-
-#### Potential Errors
-
-| Error | When |
-| --- | --- |
-| `NotFoundError` | Product key missing. |
-
-## DTO Reference
-
-### CreateFeatureDto
-
-=== "TypeScript"
-    | Field | Type | Required | Constraints |
-    | --- | --- | --- | --- |
-    | `key` | `string` | Yes | 1–255 chars, letters, digits, `-`, and `_`. |
-    | `displayName` | `string` | Yes | 1–255 chars. |
-    | `description` | `string` | No | ≤1000 chars. |
-    | `valueType` | `'toggle' \| 'numeric' \| 'text'` | Yes | Determines validation rules. |
-    | `defaultValue` | `string` | Yes | Must match `valueType`. |
-    | `groupName` | `string` | No | ≤255 chars. |
-    | `validator` | `Record<string, unknown>` | No | Custom validation metadata. |
-    | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
-
-=== ".NET"
-    | Property | Type | Required | Constraints |
-    | --- | --- | --- | --- |
-    | `Key` | `string` | Yes | 1–255 chars, letters, digits, `-`, and `_`. |
-    | `DisplayName` | `string` | Yes | 1–255 chars. |
-    | `Description` | `string` | No | ≤1000 chars. |
-    | `ValueType` | `string` | Yes | `toggle`, `numeric`, or `text`. |
-    | `DefaultValue` | `string` | Yes | Must match `ValueType`. |
-    | `GroupName` | `string` | No | ≤255 chars. |
-    | `Validator` | `Dictionary<string, object?>` | No | Custom validation metadata. |
-    | `Metadata` | `Dictionary<string, object?>` | No | JSON-safe metadata. |
-
-### UpdateFeatureDto
-
-`key` is immutable and is not on this DTO. `valueType` is accepted by the schema/validator and is **not written**. A new `defaultValue` is validated against the existing feature type.
-
-=== "TypeScript"
-    | Field | Type | Required | Constraints |
-    | --- | --- | --- | --- |
-    | `displayName` | `string` | No | 1–255 chars. |
-    | `description` | `string` | No | ≤1000 chars. |
-    | `valueType` | `'toggle' \| 'numeric' \| 'text'` | No | Accepted and ignored. |
-    | `defaultValue` | `string` | No | Must match the existing feature type. |
-    | `groupName` | `string` | No | ≤255 chars. |
-    | `validator` | `Record<string, unknown>` | No | Custom validation metadata. |
-    | `metadata` | `Record<string, unknown>` | No | JSON-safe metadata. |
-
-=== ".NET"
-    | Property | Type | Required | Constraints |
-    | --- | --- | --- | --- |
-    | `DisplayName` | `string?` | No | 1–255 chars. |
-    | `Description` | `string?` | No | ≤1000 chars. |
-    | `ValueType` | `string?` | No | Accepted and ignored. |
-    | `DefaultValue` | `string?` | No | Must match the existing feature type. |
-    | `GroupName` | `string?` | No | ≤255 chars. |
-    | `Validator` | `Dictionary<string, object?>?` | No | Custom validation metadata. |
-    | `Metadata` | `Dictionary<string, object?>?` | No | JSON-safe metadata. |
-
-### FeatureDto
-
-=== "TypeScript"
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `key` | `string` | Immutable key. |
-    | `displayName` | `string` | Human-readable name. |
-    | `description` | `string \| null` | Optional description. |
-    | `valueType` | `string` | `toggle`, `numeric`, or `text`. |
-    | `defaultValue` | `string` | Stored default value. |
-    | `groupName` | `string \| null` | Group label. |
-    | `status` | `string` | `active` or `archived`. |
-    | `validator` | `Record<string, unknown> \| null` | Validator metadata. |
-    | `metadata` | `Record<string, unknown> \| null` | Arbitrary metadata. |
-    | `createdAt` | `string` | ISO timestamp. |
-    | `updatedAt` | `string` | ISO timestamp. |
-
-=== ".NET"
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `Key` | `string` | Immutable key. |
-    | `DisplayName` | `string` | Human-readable name. |
-    | `Description` | `string?` | Optional description. |
-    | `ValueType` | `string` | `toggle`, `numeric`, or `text`. |
-    | `DefaultValue` | `string` | Stored default value. |
-    | `GroupName` | `string?` | Group label. |
-    | `Status` | `string` | `active` or `archived`. |
-    | `Validator` | `Dictionary<string, object?>?` | Validator metadata. |
-    | `Metadata` | `Dictionary<string, object?>?` | Arbitrary metadata. |
-    | `CreatedAt` | `string` | ISO timestamp. |
-    | `UpdatedAt` | `string` | ISO timestamp. |
-
-### FeatureFilterDto
-
-=== "TypeScript"
-    | Field | Type | Description |
-    | --- | --- | --- |
-    | `status` | `'active' \| 'archived'` | Lifecycle filter. |
-    | `valueType` | `'toggle' \| 'numeric' \| 'text'` | Type filter. |
-    | `groupName` | `string` | Group filter. |
-    | `search` | `string` | Text search term. |
-    | `limit` | `number` | 1–100 (default 50). |
-    | `offset` | `number` | ≥0 (default 0). |
-    | `sortBy` | `'displayName' \| 'createdAt'` | Sort column. |
-    | `sortOrder` | `'asc' \| 'desc'` | Query default `asc` when omitted. |
-
-=== ".NET"
-    | Property | Type | Description |
-    | --- | --- | --- |
-    | `Status` | `string` | `active` or `archived`. |
-    | `ValueType` | `string` | `toggle`, `numeric`, or `text`. |
-    | `GroupName` | `string` | Group filter. |
-    | `Search` | `string` | Text search term. |
-    | `Limit` | `int` | 1–100 (default 50). |
-    | `Offset` | `int` | ≥0 (default 0). |
-    | `SortBy` | `string` | `displayName` or `createdAt`. |
-    | `SortOrder` | `string?` | `asc` or `desc`. Query default `asc` when omitted. |
-
-## Related Workflows
-- Associate features with a product (`ProductManagementService.associateFeature`) so the catalog is complete. `setFeatureValue` only requires the plan and feature to exist.
-- Plan-level values (`PlanManagementService.setFeatureValue`) override defaults but are superseded by subscription overrides.
-- Subscription overrides (`SubscriptionManagementService.addFeatureOverride`) take precedence in the feature resolution hierarchy enforced by `FeatureCheckerService`.
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+<span id="getFeature" class="compatibility-anchor"></span>
+
+<span id="description_2" class="compatibility-anchor"></span>
+<span id="description_2-typescript" class="compatibility-anchor"></span>
+<span id="description_2-net" class="compatibility-anchor"></span>
+<span id="signature_4" class="compatibility-anchor"></span>
+<span id="inputs_4" class="compatibility-anchor"></span>
+<span id="returns_4" class="compatibility-anchor"></span>
+<span id="example_4" class="compatibility-anchor"></span>
+<span id="signature_5" class="compatibility-anchor"></span>
+<span id="inputs_5" class="compatibility-anchor"></span>
+<span id="returns_5" class="compatibility-anchor"></span>
+<span id="example_5" class="compatibility-anchor"></span>
+<span id="expected-results_2" class="compatibility-anchor"></span>
+<span id="potential-errors_2" class="compatibility-anchor"></span>
+
+### getFeature { #getfeature data-method-ts="getFeature" data-method-net="GetFeatureAsync" }
+
+Retrieve a feature definition by its key.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+getFeature(key: string): Promise<FeatureDto | null>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: The key identifying the feature, such as `max-projects`.
+
+**Returns** <code><a href="#FeatureDto">FeatureDto</a> | null</code>: The feature snapshot, including related add-ons and any metering configuration, or null if the key is missing.
+
+**Example**
+
+Returns null if `max-projects` does not exist.
+
+```typescript
+const feature = await features.getFeature('max-projects');
+console.log(feature);
+```
+
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<FeatureDto?> GetFeatureAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: The key identifying the feature, such as `max-projects`.
+
+**Returns** <code><a href="#FeatureDto">FeatureDto</a>?</code>: The feature snapshot, including related add-ons and any metering configuration, or null if the key is missing.
+
+**Example**
+
+Returns null if `max-projects` does not exist.
+
+```csharp
+var feature = await subscrio.Features.GetFeatureAsync("max-projects");
+Console.WriteLine(feature?.Key);
+```
+
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+<span id="listFeatures" class="compatibility-anchor"></span>
+
+<span id="description_3" class="compatibility-anchor"></span>
+<span id="description_3-typescript" class="compatibility-anchor"></span>
+<span id="description_3-net" class="compatibility-anchor"></span>
+<span id="signature_6" class="compatibility-anchor"></span>
+<span id="inputs_6" class="compatibility-anchor"></span>
+<span id="returns_6" class="compatibility-anchor"></span>
+<span id="example_6" class="compatibility-anchor"></span>
+<span id="signature_7" class="compatibility-anchor"></span>
+<span id="inputs_7" class="compatibility-anchor"></span>
+<span id="returns_7" class="compatibility-anchor"></span>
+<span id="example_7" class="compatibility-anchor"></span>
+<span id="expected-results_3" class="compatibility-anchor"></span>
+<span id="potential-errors_3" class="compatibility-anchor"></span>
+
+### listFeatures { #listfeatures data-method-ts="listFeatures" data-method-net="ListFeaturesAsync" }
+
+Browse feature definitions with filtering, sorting, and pagination.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+listFeatures(filters?: FeatureFilterDto): Promise<FeatureDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: [FeatureFilterDto](#FeatureFilterDto) options. Optional; when omitted, returns up to 50 records starting at offset 0.
+
+**Returns** <code><a href="#FeatureDto">FeatureDto</a>[]</code>: Matching feature snapshots, each including related add-ons; an empty collection when nothing matches.
+
+**Example**
+
+```typescript
+const toggles = await features.listFeatures({ valueType: 'toggle', limit: 20, offset: 0 });
+console.log(toggles);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationError`: A filter is invalid.
+
+</details>
+
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<FeatureDto>> ListFeaturesAsync(FeatureFilterDto? filters)
+```
+
+</div>
+
+**Parameters**
+
+- `filters`: [FeatureFilterDto](#FeatureFilterDto) options. Optional; when omitted, returns up to 50 records starting at offset 0.
+
+**Returns** <code>List&lt;<a href="#FeatureDto">FeatureDto</a>&gt;</code>: Matching feature snapshots, each including related add-ons; an empty collection when nothing matches.
+
+**Example**
+
+```csharp
+var toggles = await subscrio.Features.ListFeaturesAsync(new FeatureFilterDto(
+    ValueType: "toggle",
+    Limit: 20
+));
+Console.WriteLine(toggles.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `ValidationException`: A filter is invalid.
+
+</details>
+
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+<span id="getFeaturesByProduct" class="compatibility-anchor"></span>
+
+<span id="description_7" class="compatibility-anchor"></span>
+<span id="description_7-typescript" class="compatibility-anchor"></span>
+<span id="description_7-net" class="compatibility-anchor"></span>
+<span id="signature_14" class="compatibility-anchor"></span>
+<span id="inputs_14" class="compatibility-anchor"></span>
+<span id="returns_14" class="compatibility-anchor"></span>
+<span id="example_14" class="compatibility-anchor"></span>
+<span id="signature_15" class="compatibility-anchor"></span>
+<span id="inputs_15" class="compatibility-anchor"></span>
+<span id="returns_15" class="compatibility-anchor"></span>
+<span id="example_15" class="compatibility-anchor"></span>
+<span id="expected-results_7" class="compatibility-anchor"></span>
+<span id="potential-errors_7" class="compatibility-anchor"></span>
+
+### getFeaturesByProduct { #getfeaturesbyproduct data-method-ts="getFeaturesByProduct" data-method-net="GetFeaturesByProductAsync" }
+
+List the feature definitions associated with a product.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+getFeaturesByProduct(productKey: string): Promise<FeatureDto[]>
+```
+
+</div>
+
+**Parameters**
+
+- `productKey`: The key of an existing product.
+
+**Returns** <code><a href="#FeatureDto">FeatureDto</a>[]</code>: Associated feature snapshots; an empty collection when none are associated.
+
+**Example**
+
+Requires an existing product with key `pro-suite`.
+
+```typescript
+const productFeatures = await features.getFeaturesByProduct('pro-suite');
+console.log(productFeatures);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The product does not exist.
+
+</details>
+
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task<List<FeatureDto>> GetFeaturesByProductAsync(string productKey)
+```
+
+</div>
+
+**Parameters**
+
+- `productKey`: The key of an existing product.
+
+**Returns** <code>List&lt;<a href="#FeatureDto">FeatureDto</a>&gt;</code>: Associated feature snapshots; an empty collection when none are associated.
+
+**Example**
+
+Requires an existing product with key `pro-suite`.
+
+```csharp
+var productFeatures = await subscrio.Features.GetFeaturesByProductAsync("pro-suite");
+Console.WriteLine(productFeatures.Count);
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The product does not exist.
+
+</details>
+
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+<span id="archiveFeature" class="compatibility-anchor"></span>
+
+<span id="description_4" class="compatibility-anchor"></span>
+<span id="description_4-typescript" class="compatibility-anchor"></span>
+<span id="description_4-net" class="compatibility-anchor"></span>
+<span id="signature_8" class="compatibility-anchor"></span>
+<span id="inputs_8" class="compatibility-anchor"></span>
+<span id="returns_8" class="compatibility-anchor"></span>
+<span id="example_8" class="compatibility-anchor"></span>
+<span id="signature_9" class="compatibility-anchor"></span>
+<span id="inputs_9" class="compatibility-anchor"></span>
+<span id="returns_9" class="compatibility-anchor"></span>
+<span id="example_9" class="compatibility-anchor"></span>
+<span id="expected-results_4" class="compatibility-anchor"></span>
+<span id="potential-errors_4" class="compatibility-anchor"></span>
+
+### archiveFeature { #archivefeature data-method-ts="archiveFeature" data-method-net="ArchiveFeatureAsync" }
+
+Mark a feature as archived while retaining its saved definition and relationships. Archiving is required before deletion; use the [unarchive method](#unarchivefeature) to restore active status.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+archiveFeature(key: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: The key identifying the feature, such as `max-projects`.
+
+**Returns** No returned value.
+
+**Example**
+
+Uses an existing feature with key `max-projects`.
+
+```typescript
+await features.archiveFeature('max-projects');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The feature does not exist.
+
+</details>
+
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task ArchiveFeatureAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: The key identifying the feature, such as `max-projects`.
+
+**Returns** No returned value.
+
+**Example**
+
+Uses an existing feature with key `max-projects`.
+
+```csharp
+await subscrio.Features.ArchiveFeatureAsync("max-projects");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The feature does not exist.
+
+</details>
+
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+<span id="unarchiveFeature" class="compatibility-anchor"></span>
+
+<span id="description_5" class="compatibility-anchor"></span>
+<span id="description_5-typescript" class="compatibility-anchor"></span>
+<span id="description_5-net" class="compatibility-anchor"></span>
+<span id="signature_10" class="compatibility-anchor"></span>
+<span id="inputs_10" class="compatibility-anchor"></span>
+<span id="returns_10" class="compatibility-anchor"></span>
+<span id="example_10" class="compatibility-anchor"></span>
+<span id="signature_11" class="compatibility-anchor"></span>
+<span id="inputs_11" class="compatibility-anchor"></span>
+<span id="returns_11" class="compatibility-anchor"></span>
+<span id="example_11" class="compatibility-anchor"></span>
+<span id="expected-results_5" class="compatibility-anchor"></span>
+<span id="potential-errors_5" class="compatibility-anchor"></span>
+
+### unarchiveFeature { #unarchivefeature data-method-ts="unarchiveFeature" data-method-net="UnarchiveFeatureAsync" }
+
+Restore an archived feature to active status.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+unarchiveFeature(key: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: The key identifying the feature, such as `max-projects`.
+
+**Returns** No returned value.
+
+**Example**
+
+Uses an archived feature with key `max-projects`.
+
+```typescript
+await features.unarchiveFeature('max-projects');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundError`: The feature does not exist.
+
+</details>
+
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task UnarchiveFeatureAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: The key identifying the feature, such as `max-projects`.
+
+**Returns** No returned value.
+
+**Example**
+
+Uses an archived feature with key `max-projects`.
+
+```csharp
+await subscrio.Features.UnarchiveFeatureAsync("max-projects");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (1)</summary>
+
+- `NotFoundException`: The feature does not exist.
+
+</details>
+
+
+</div>
+
+</div>
+
+<div class="method-entry" markdown="1">
+
+<span id="deleteFeature" class="compatibility-anchor"></span>
+
+<span id="description_6" class="compatibility-anchor"></span>
+<span id="description_6-typescript" class="compatibility-anchor"></span>
+<span id="description_6-net" class="compatibility-anchor"></span>
+<span id="signature_12" class="compatibility-anchor"></span>
+<span id="inputs_12" class="compatibility-anchor"></span>
+<span id="returns_12" class="compatibility-anchor"></span>
+<span id="example_12" class="compatibility-anchor"></span>
+<span id="signature_13" class="compatibility-anchor"></span>
+<span id="inputs_13" class="compatibility-anchor"></span>
+<span id="returns_13" class="compatibility-anchor"></span>
+<span id="example_13" class="compatibility-anchor"></span>
+<span id="expected-results_6" class="compatibility-anchor"></span>
+<span id="potential-errors_6" class="compatibility-anchor"></span>
+
+### deleteFeature { #deletefeature data-method-ts="deleteFeature" data-method-net="DeleteFeatureAsync" }
+
+Permanently delete an archived feature. Remove product associations, plan values, and subscription overrides first; other stored references may also block deletion.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+<div class="signature" markdown="1">
+
+```typescript
+deleteFeature(key: string): Promise<void>
+```
+
+</div>
+
+**Parameters**
+
+- `key`: The key identifying the feature, such as `max-projects`.
+
+**Returns** No returned value.
+
+**Example**
+
+Requires `max-projects` to be archived and free of references.
+
+```typescript
+await features.deleteFeature('max-projects');
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundError`: The feature does not exist.
+- `DomainError`: The feature is active or has references checked by the library.
+
+</details>
+
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+<div class="signature" markdown="1">
+
+```csharp
+Task DeleteFeatureAsync(string key)
+```
+
+</div>
+
+**Parameters**
+
+- `key`: The key identifying the feature, such as `max-projects`.
+
+**Returns** No returned value.
+
+**Example**
+
+Requires `max-projects` to be archived and free of references.
+
+```csharp
+await subscrio.Features.DeleteFeatureAsync("max-projects");
+```
+
+<details class="method-errors" markdown="1">
+<summary>Errors (2)</summary>
+
+- `NotFoundException`: The feature does not exist.
+- `DomainException`: The feature is active or has references checked by the library.
+
+</details>
+
+
+</div>
+
+</div>
+
+<span id="dto-reference" class="compatibility-anchor"></span>
+
+## Data types
+
+For input types, Required means the caller must supply the property. For returned types, it means the property is present in the response; its value may still be null where the type allows it.
+
+<div class="data-type" markdown="1">
+
+<span id="createfeaturedto-typescript" class="compatibility-anchor"></span>
+<span id="createfeaturedto-net" class="compatibility-anchor"></span>
+
+### CreateFeatureDto { #CreateFeatureDto }
+
+<span id="createfeaturedto"></span>
+
+The properties used to define a feature.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `key` | <code>string</code> | Yes | None | Stable feature identifier. Letters, digits, hyphens and underscores; 1–255 characters. |
+| `displayName` | <code>string</code> | Yes | None | Human-readable label, 1–255 characters. |
+| `valueType` | <code>"toggle" \| "numeric" \| "text" \| "metered"</code> | Yes | None | toggle, numeric, text, or metered. |
+| `defaultValue` | <code>string</code> | Yes | None | Fallback value stored as a string. Toggle: true or false (case-insensitive); numeric: a finite number; metered: a nonnegative safe integer; text: a nonempty string. |
+| `description` | <code>string \| undefined</code> | No | None | Optional description, up to 1,000 characters. |
+| `groupName` | <code>string \| undefined</code> | No | None | Optional catalog group, up to 255 characters. |
+| `meteredConfig` | <code><a href="#MeteredFeatureConfigDto">MeteredFeatureConfigDto</a> \| undefined</code> | When metered | None | Required for a metered feature; rejected for other feature types. |
+| `validator` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Custom validation metadata. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Application-defined metadata. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | None | Stable feature identifier. Letters, digits, hyphens and underscores; 1–255 characters. |
+| `DisplayName` | <code>string</code> | Yes | None | Human-readable label, 1–255 characters. |
+| `ValueType` | <code>string</code> | Yes | None | toggle, numeric, text, or metered. |
+| `DefaultValue` | <code>string</code> | Yes | None | Fallback value stored as a string. Toggle: true or false (case-insensitive); numeric: a finite number; metered: a nonnegative safe integer; text: a nonempty string. |
+| `Description` | <code>string?</code> | No | null | Optional description, up to 1,000 characters. |
+| `GroupName` | <code>string?</code> | No | null | Optional catalog group, up to 255 characters. |
+| `Validator` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Custom validation metadata. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Application-defined metadata. |
+| `MeteredConfig` | <code><a href="#MeteredFeatureConfigDto">MeteredFeatureConfigDto</a>?</code> | When metered | null | Required for a metered feature; rejected for other feature types. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+<span id="metered-feature-type" class="compatibility-anchor"></span>
+<span id="metered-configuration" class="compatibility-anchor"></span>
+<span id="metered-configuration-typescript" class="compatibility-anchor"></span>
+<span id="metered-configuration-net" class="compatibility-anchor"></span>
+
+### MeteredFeatureConfigDto { #MeteredFeatureConfigDto }
+
+<span id="meteredfeatureconfigdto"></span>
+
+How usage is recorded and limited for a metered feature. All four settings are required when supplying this object.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `resetPeriod` | <code>"monthly" \| "yearly" \| "billing_period" \| "hourly" \| "daily" \| "weekly"</code> | Yes | None | hourly, daily, weekly, monthly, yearly, or billing_period. Calendar periods use UTC. |
+| `enforcement` | <code>"hard" \| "soft"</code> | Yes | None | hard rejects over-limit usage; soft records usage and reports overage. |
+| `aggregation` | <code>"count" \| "sum"</code> | Yes | None | sum adds the quantity; count requires quantity one per event. |
+| `usageScope` | <code>"customer" \| "subscription"</code> | Yes | None | customer shares the product usage bucket; subscription keeps a separate bucket per subscription. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `ResetPeriod` | <code>string</code> | Yes | None | hourly, daily, weekly, monthly, yearly, or billing_period. Calendar periods use UTC. |
+| `Enforcement` | <code>string</code> | Yes | None | hard rejects over-limit usage; soft records usage and reports overage. |
+| `Aggregation` | <code>string</code> | Yes | None | sum adds the quantity; count requires quantity one per event. |
+| `UsageScope` | <code>string</code> | Yes | None | customer shares the product usage bucket; subscription keeps a separate bucket per subscription. |
+
+</div>
+
+Calendar reset periods use UTC. Billing-period resets require usage to be tracked per subscription. Once usage is recorded, only enforcement can change among these four settings. See [Metered Usage](metering.md) for quota checks and reports.
+
+</div>
+
+<div class="data-type" markdown="1">
+
+<span id="featuredto-typescript" class="compatibility-anchor"></span>
+<span id="featuredto-net" class="compatibility-anchor"></span>
+
+### FeatureDto { #FeatureDto }
+
+<span id="featuredto"></span>
+
+The complete feature definition returned by create, update, get, and list operations.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `addons` | <code><a href="../addons/#getaddon">AddonDto</a>[]</code> | Yes | Not applicable | Related add-on definitions, including each add-on's complete feature-value map. See [AddonDto properties](addons.md#getaddon). |
+| `meteredConfig` | <code><a href="#MeteredFeatureConfigDto">MeteredFeatureConfigDto</a> \| null \| undefined</code> | No | Not applicable | Current metering settings, or absent/null when not configured. |
+| `key` | <code>string</code> | Yes | Not applicable | Stable feature identifier. Letters, digits, hyphens and underscores; 1–255 characters. |
+| `displayName` | <code>string</code> | Yes | Not applicable | Human-readable label, 1–255 characters. |
+| `description` | <code>string \| null \| undefined</code> | No | Not applicable | Optional description, up to 1,000 characters. |
+| `valueType` | <code>string</code> | Yes | Not applicable | toggle, numeric, text, or metered. |
+| `defaultValue` | <code>string</code> | Yes | Not applicable | Fallback value stored as a string. Toggle: true or false (case-insensitive); numeric: a finite number; metered: a nonnegative safe integer; text: a nonempty string. |
+| `groupName` | <code>string \| null \| undefined</code> | No | Not applicable | Optional catalog group, up to 255 characters. |
+| `status` | <code>string</code> | Yes | Not applicable | Feature status: active or archived. |
+| `validator` | <code>Record&lt;string, unknown&gt; \| null \| undefined</code> | No | Not applicable | Custom validation metadata. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| null \| undefined</code> | No | Not applicable | Application-defined metadata. |
+| `createdAt` | <code>string</code> | Yes | Not applicable | Creation timestamp in ISO format. |
+| `updatedAt` | <code>string</code> | Yes | Not applicable | Last update timestamp in ISO format. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Key` | <code>string</code> | Yes | Not applicable | Stable feature identifier. Letters, digits, hyphens and underscores; 1–255 characters. |
+| `DisplayName` | <code>string</code> | Yes | Not applicable | Human-readable label, 1–255 characters. |
+| `Description` | <code>string?</code> | Yes | Not applicable | Optional description, up to 1,000 characters. |
+| `ValueType` | <code>string</code> | Yes | Not applicable | toggle, numeric, text, or metered. |
+| `DefaultValue` | <code>string</code> | Yes | Not applicable | Fallback value stored as a string. Toggle: true or false (case-insensitive); numeric: a finite number; metered: a nonnegative safe integer; text: a nonempty string. |
+| `GroupName` | <code>string?</code> | Yes | Not applicable | Optional catalog group, up to 255 characters. |
+| `Status` | <code>string</code> | Yes | Not applicable | Feature status: active or archived. |
+| `Validator` | <code>Dictionary&lt;string, object?&gt;?</code> | Yes | Not applicable | Custom validation metadata. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | Yes | Not applicable | Application-defined metadata. |
+| `CreatedAt` | <code>string</code> | Yes | Not applicable | Creation timestamp in ISO format. |
+| `UpdatedAt` | <code>string</code> | Yes | Not applicable | Last update timestamp in ISO format. |
+| `MeteredConfig` | <code><a href="#MeteredFeatureConfigDto">MeteredFeatureConfigDto</a>?</code> | Yes | Not applicable | Current metering settings, or absent/null when not configured. |
+| `Addons` | <code>List&lt;<a href="../addons/#getaddon">AddonDto</a>&gt;</code> | Yes | Not applicable | Related add-on definitions, including each add-on's complete feature-value map. See [AddonDto properties](addons.md#getaddon). |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+<span id="updatefeaturedto-typescript" class="compatibility-anchor"></span>
+<span id="updatefeaturedto-net" class="compatibility-anchor"></span>
+
+### UpdateFeatureDto { #UpdateFeatureDto }
+
+<span id="updatefeaturedto"></span>
+
+The editable properties of a feature. The key cannot be changed. See [partial updates](getting-started.md#partial-updates).
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `displayName` | <code>string \| undefined</code> | No | None | Human-readable label, 1–255 characters. |
+| `description` | <code>string \| undefined</code> | No | None | Optional description, up to 1,000 characters. |
+| `valueType` | <code>"toggle" \| "numeric" \| "text" \| "metered" \| undefined</code> | No | None | toggle, numeric, text, or metered. Remove credit consumption rules before changing to metered. The existing or supplied default value must be valid for the new type. |
+| `defaultValue` | <code>string \| undefined</code> | No | None | Fallback value stored as a string. Toggle: true or false (case-insensitive); numeric: a finite number; metered: a nonnegative safe integer; text: a nonempty string. |
+| `groupName` | <code>string \| undefined</code> | No | None | Optional catalog group, up to 255 characters. |
+| `meteredConfig` | <code><a href="#MeteredFeatureConfigDto">MeteredFeatureConfigDto</a> \| undefined</code> | No | None | Supply all four settings to update this object. Only metered features accept it. |
+| `validator` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Custom validation metadata. Replaces all saved entries; an empty object clears them. |
+| `metadata` | <code>Record&lt;string, unknown&gt; \| undefined</code> | No | None | Application-defined metadata. Replaces all saved entries; an empty object clears them. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `DisplayName` | <code>string?</code> | No | null | Human-readable label, 1–255 characters. |
+| `Description` | <code>string?</code> | No | null | Optional description, up to 1,000 characters. |
+| `ValueType` | <code>string?</code> | No | null | toggle, numeric, text, or metered. Remove credit consumption rules before changing to metered. The existing or supplied default value must be valid for the new type. |
+| `DefaultValue` | <code>string?</code> | No | null | Fallback value stored as a string. Toggle: true or false (case-insensitive); numeric: a finite number; metered: a nonnegative safe integer; text: a nonempty string. |
+| `GroupName` | <code>string?</code> | No | null | Optional catalog group, up to 255 characters. |
+| `Validator` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Custom validation metadata. Replaces all saved entries; an empty object clears them. |
+| `Metadata` | <code>Dictionary&lt;string, object?&gt;?</code> | No | null | Application-defined metadata. Replaces all saved entries; an empty object clears them. |
+| `MeteredConfig` | <code><a href="#MeteredFeatureConfigDto">MeteredFeatureConfigDto</a>?</code> | No | null | Supply all four settings to update this object. Only metered features accept it. |
+
+</div>
+
+</div>
+
+<div class="data-type" markdown="1">
+
+<span id="featurefilterdto-typescript" class="compatibility-anchor"></span>
+<span id="featurefilterdto-net" class="compatibility-anchor"></span>
+
+### FeatureFilterDto { #FeatureFilterDto }
+
+<span id="featurefilterdto"></span>
+
+Filters, pagination, and ordering for the feature catalog.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+When supplying a filters object, its TypeScript type requires `limit` and `offset`. Omitting the whole argument uses the method defaults.
+
+| Field | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `limit` | <code>number</code> | Yes | 50 | Page size, from 1 to 100. |
+| `offset` | <code>number</code> | Yes | 0 | Nonnegative number of records to skip. |
+| `status` | <code>"archived" \| "active" \| undefined</code> | No | None | Feature status: active or archived. |
+| `valueType` | <code>"toggle" \| "numeric" \| "text" \| "metered" \| undefined</code> | No | None | Filter by toggle, numeric, text, or metered. |
+| `groupName` | <code>string \| undefined</code> | No | None | Filter by group name. |
+| `search` | <code>string \| undefined</code> | No | None | Text search term. |
+| `sortBy` | <code>"displayName" \| "createdAt" \| undefined</code> | No | None | Sort by displayName or createdAt. |
+| `sortOrder` | <code>"asc" \| "desc" \| undefined</code> | No | None | Sort direction; the query uses asc when omitted. |
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+All constructor arguments are optional.
+
+| Property | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `Status` | <code>string?</code> | No | null | Feature status: active or archived. |
+| `ValueType` | <code>string?</code> | No | null | Filter by toggle, numeric, text, or metered. |
+| `GroupName` | <code>string?</code> | No | null | Filter by group name. |
+| `Search` | <code>string?</code> | No | null | Text search term. |
+| `SortBy` | <code>string?</code> | No | null | Sort by displayName or createdAt. |
+| `SortOrder` | <code>string?</code> | No | null | Sort direction; the query uses asc when omitted. |
+| `Limit` | <code>int</code> | No | 50 | Page size, from 1 to 100. |
+| `Offset` | <code>int</code> | No | 0 | Nonnegative number of records to skip. |
+
+</div>
+
+</div>
+
+<span id="related-workflows"></span>
+
+## Related guides
+
+- [Products](products.md): associate features with products.
+- [Plans](plans.md): set plan-specific feature values.
+- [Subscriptions](subscriptions.md): override a feature value for a subscription.
+- [How Feature Values Are Calculated](feature-resolution.md): how plan values, add-ons, and overrides determine access.
+- [Metered Usage](metering.md): check allowances and record consumption.

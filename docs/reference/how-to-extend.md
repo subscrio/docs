@@ -1,461 +1,186 @@
 ---
-title: How to extend
-description: Add behavior around Subscrio writes with inline hook handlers, first-party audit-log and payments packages, or your own extension.
+title: Extending Subscrio
+description: Use hooks and the audit-log and payments extensions around library operations.
 ---
 
-# How to Extend Subscrio
+# Extending Subscrio
 
-Use [hooks](./hooks.md) to add behavior around customer and subscription mutations without forking Subscrio. This page covers inline handlers, the first-party audit-log and payments packages, and how to package your own extension.
+Hooks let application code validate proposed changes and react after an operation. Software extensions package those handlers and, when needed, their own storage. They are separate from subscription add-ons.
 
-## 1. What You Can Extend
+<span id="1-what-you-can-extend"></span>
+<span id="2-inline-extension"></span>
+<span id="3-first-party-audit-log-extension"></span>
+<span id="31-first-party-payments-extension"></span>
+<span id="4-distributable-extension-pattern"></span>
+<span id="package-setup"></span>
+<span id="register-function"></span>
+<span id="consumer-install-and-usage"></span>
+<span id="conventions"></span>
+<span id="5-custom-sink-example"></span>
+<span id="sink-interface"></span>
+<span id="in-memory-sink-tests-demos"></span>
+<span id="inline-app-usage"></span>
+<span id="packaged-usage"></span>
+<span id="phase-trade-offs"></span>
+<span id="related"></span>
+<span id="accounting-extension-boundary"></span>
+
+## Choose a hook
+
+| Event family | Available operations |
+| --- | --- |
+| Customer | Create, update, archive, restore, delete. |
+| Subscription | Create, update, archive, restore, delete, overrides, temporary-override clearing. |
+| Add-on attachment | Attach or detach a subscription package. |
+| Accounting | Report usage, grant credits, consume credits, adjust credits. |
+| Stripe intake | Before and after processing a parsed event. |
+
+Each has before and after events. There are no general catalog-mutation hooks for creating products, plans, or features. See [Hooks](hooks.md) for the complete names and payloads.
+
+Handlers run in registration order. A thrown error stops later handlers. Before handlers can reject an operation and may change only the fields supported by that event. Editing an after snapshot does not save it. Accounting payloads use input/result fields; customer and subscription payloads use old/new snapshots.
 
-You can subscribe to before/after pairs for:
+## Register application behavior
 
-- Customer lifecycle: `customer.created.*`, `customer.updated.*`, `customer.archived.*`, `customer.unarchived.*`, `customer.deleted.*`
-- Subscription lifecycle: create/update/archive/unarchive/delete, feature override changes, temporary override clears
-- Inbound Stripe: `stripe.received.before` (verified event, before Subscrio processes it) and `stripe.received.after` (after processing completes)
+This handler rejects a customer update using a blocked email domain. It uses the initialized instance from [Getting Started](getting-started.md).
 
-`*.before` runs before persistence and may mutate `new` or abort by throwing. `*.after` runs after a successful write; throwing does not roll back the row. `source` tells you whether the write came from the public API (`api`), Stripe sync (`stripe`), or an internal job such as expired transitions (`system`).
+<div class="language-content" data-lang="ts" markdown="1">
 
-## 2. Inline Extension
+```typescript
+import { HookEvents } from 'subscrio';
 
-Register handlers on a `Subscrio` instance for app-local behavior.
-
-=== "TypeScript"
-    ```typescript
-    import { Subscrio, HookEvents } from 'subscrio';
+const unsubscribe = subscrio.hooks.on(HookEvents.CustomerUpdatedBefore, event => {
+  if (event.new?.email?.endsWith('@blocked.test')) {
+    throw new Error('Customer email domain is not allowed');
+  }
+});
+// Keep the handler registered while processing application requests.
+// Call this during shutdown or when removing the extension:
+unsubscribe();
+```
+
+</div>
 
-    const subscrio = new Subscrio({
-      database: { connectionString: process.env.DATABASE_URL! },
-    });
+<div class="language-content" data-lang="net" markdown="1">
 
-    subscrio.hooks.on(HookEvents.CustomerCreatedBefore, async ({ new: customer, source }) => {
-      console.log('customer creating', customer?.key, source);
-    });
+```csharp
+var unsubscribe = subscrio.Hooks.OnCustomerUpdatedBefore((evt, cancellationToken) =>
+{
+    if (evt.New?.Email?.EndsWith("@blocked.test") == true)
+        throw new InvalidOperationException("Customer email domain is not allowed");
+    return Task.CompletedTask;
+});
+// Keep the handler registered while processing application requests.
+// Call this during shutdown or when removing the extension:
+unsubscribe();
+```
+
+</div>
+
+Register handlers once for each instance that processes operations. TypeScript returns an unsubscribe function from `on`; .NET returns an `Action` from its named registration methods. Unsubscribe when an extension is disposed. Avoid calling the same mutation recursively from its own handler.
+
+## Understand failure after commit
 
-    subscrio.hooks.on(HookEvents.CustomerCreatedAfter, async ({ entityId, new: customer }) => {
-      console.log('customer created', entityId, customer?.key);
-    });
-    ```
+An after-handler failure propagates to the caller after the underlying change has saved. It does not undo that change. Accounting operations report this with `CommittedOperationHookError` / `CommittedOperationHookException`, including the committed result. Repeating an idempotent request recovers the receipt but does not replay its after hooks.
 
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
-    using Subscrio.Core.Application.Hooks;
+External notifications and extension inserts are not part of the core transaction. If delivery must be reliable, give your application a durable retry and reconciliation workflow. An audit sink outage must not be mistaken for proof that the subscription or debit failed.
 
-    var subscrio = new Subscrio(config);
+## Store audit records
 
-    subscrio.Hooks.OnCustomerCreatedBefore(async (evt, ct) =>
-    {
-        Console.WriteLine($"customer creating {evt.New?.Key} {evt.Source}");
-    });
+The audit extension records after events in `subscrio.transaction_logs`, including usage, credits, add-on attachments, and the existing customer/subscription events. It stores accounting input/result information separately from the core ledger.
 
-    subscrio.Hooks.OnCustomerCreatedAfter(async (evt, ct) =>
-    {
-        Console.WriteLine($"customer created {evt.EntityId} {evt.New?.Key}");
-    });
-    ```
+| Language | Package |
+| --- | --- |
+| TypeScript | `subscrio-audit-log` |
+| .NET | `Subscrio.AuditLog` |
 
-Throw from a **before** handler to abort the mutation. Prefer fast, reliable handlers; do heavy work asynchronously only if you accept eventual consistency.
+Both implementations use PostgreSQL. Use the same PostgreSQL database as core; these extensions do not add SQL Server support. Install the core schema before the extension schema, and finish extension setup before accepting mutations.
 
-=== "TypeScript"
-    ```typescript
-    subscrio.hooks.on(HookEvents.CustomerUpdatedBefore, async ({ new: next }) => {
-      if (next?.email?.endsWith('@blocked.test')) {
-        throw new Error('Blocked customer domain');
-      }
-    });
-    ```
+<div class="language-content" data-lang="ts" markdown="1">
 
-=== ".NET"
-    ```csharp
-    subscrio.Hooks.OnCustomerUpdatedBefore(async (evt, ct) =>
-    {
-        if (evt.New?.Email?.EndsWith("@blocked.test") == true)
-        {
-            throw new InvalidOperationException("Blocked customer domain");
-        }
-    });
-    ```
+```typescript
+import { createAuditLog } from 'subscrio-audit-log';
 
-## 3. First-Party Audit Log Extension
-
-Subscrio ships installable audit packages that register `*.after` hooks and store rows in Postgres (`subscrio.transaction_logs`). Schema is created only when you initialize the extension.
-
-| Language | Package | Location |
-| --- | --- | --- |
-| TypeScript | `subscrio-audit-log` | [`subscrio-extensions-audit-log`](https://github.com/subscrio/subscrio-extensions-audit-log/blob/main/typescript/README.md) |
-| .NET | `Subscrio.AuditLog` | [`subscrio-extensions-audit-log`](https://github.com/subscrio/subscrio-extensions-audit-log/blob/main/dotnet/README.md) |
-
-=== "TypeScript"
-    ```bash
-    npm install subscrio-audit-log
-    ```
-
-    ```typescript
-    import { Subscrio } from 'subscrio';
-    import { createAuditLog } from 'subscrio-audit-log';
-
-    const subscrio = new Subscrio({ database: { connectionString } });
-    await subscrio.installSchema();
-
-    const audit = createAuditLog(subscrio, { database: { connectionString } });
-    await audit.installSchema();
-
-    const { data, total } = await audit.list({ customerKey: 'acme', limit: 50 });
-    await audit.dispose();
-    ```
-
-=== ".NET"
-    ```bash
-    dotnet add package Subscrio.AuditLog
-    ```
-
-    ```csharp
-    using Subscrio.AuditLog;
-    using Subscrio.AuditLog.DTOs;
-
-    await using var audit = subscrio.UseAuditLog(new AuditLogOptions
-    {
-        ConnectionString = connectionString,
-    });
-    await audit.InstallSchemaAsync();
-
-    var page = await audit.ListAsync(new TransactionLogFilters { CustomerKey = "acme", Limit = 50 });
-    ```
-
-See each package README for schema columns, filters, nullable FKs, and after-hook failure semantics.
-
-## 3.1 First-Party Payments Extension
-
-Subscrio ships installable payments packages that register `stripe.received.after` and store a row in Postgres (`subscrio.payments`) for each `invoice.payment_succeeded` event. Schema is created only when you initialize the extension.
-
-| Language | Package | Location |
-| --- | --- | --- |
-| TypeScript | `subscrio-payments` | [`subscrio-extensions-payments`](https://github.com/subscrio/subscrio-extensions-payments/blob/main/typescript/README.md) |
-| .NET | `Subscrio.Payments` | [`subscrio-extensions-payments`](https://github.com/subscrio/subscrio-extensions-payments/blob/main/dotnet/README.md) |
-
-=== "TypeScript"
-    ```bash
-    npm install subscrio-payments
-    ```
-
-    ```typescript
-    import { Subscrio } from 'subscrio';
-    import { createPaymentTracker } from 'subscrio-payments';
-
-    const subscrio = new Subscrio({ database: { connectionString } });
-    await subscrio.installSchema();
-
-    const payments = createPaymentTracker(subscrio, { database: { connectionString } });
-    await payments.installSchema();
-
-    const { data, total } = await payments.list({ customerId: 1, limit: 50 });
-    await payments.dispose();
-    ```
-
-=== ".NET"
-    ```bash
-    dotnet add package Subscrio.Payments
-    ```
-
-    ```csharp
-    using Subscrio.Payments;
-    using Subscrio.Payments.DTOs;
-
-    await using var payments = subscrio.UsePayments(new PaymentTrackerOptions
-    {
-        ConnectionString = connectionString,
-    });
-    await payments.InstallSchemaAsync();
-
-    var page = await payments.ListAsync(new PaymentFilters { CustomerId = 1, Limit = 50 });
-    ```
-
-See each package README for columns (`amount_paid`, billing-cycle duration, Stripe invoice id), idempotency, and after-hook failure semantics.
-
-## 4. Distributable Extension Pattern
-
-Ship your own reusable package that only registers hooks. Do not replace Subscrio services or fork the library. For Postgres audit storage, prefer the first-party packages in section 3.
-
-### Package Setup
-
-=== "TypeScript"
-    1. Create an npm package (e.g. `@acme/subscrio-my-extension`).
-    2. Peer-depend on `subscrio`.
-    3. Export a register function that calls `subscrio.hooks.on(...)`.
-
-=== ".NET"
-    1. Create a NuGet class library (e.g. `Acme.Subscrio.MyExtension`).
-    2. Depend on `Subscrio.Core`.
-    3. Export an extension method that calls `subscrio.Hooks.On*(...)`.
-
-### Register Function
-
-=== "TypeScript"
-    ```typescript
-    import type { Subscrio } from 'subscrio';
-    import { HookEvents } from 'subscrio';
-
-    export interface AuditLogOptions {
-      sink: AuditLogSink;
-    }
-
-    export function registerAuditLog(subscrio: Subscrio, options: AuditLogOptions): () => void {
-      const unsubs = [
-        subscrio.hooks.on(HookEvents.CustomerCreatedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.CustomerUpdatedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.CustomerArchivedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.CustomerUnarchivedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.CustomerDeletedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.SubscriptionCreatedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.SubscriptionUpdatedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.SubscriptionArchivedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.SubscriptionUnarchivedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.SubscriptionDeletedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.SubscriptionFeatureOverrideAddedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.SubscriptionFeatureOverrideRemovedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.SubscriptionTemporaryOverridesClearedAfter, (e) => options.sink.write(e)),
-        subscrio.hooks.on(HookEvents.StripeReceivedAfter, (e) => options.sink.writeStripe(e)),
-      ];
-      return () => unsubs.forEach((off) => off());
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    using Subscrio.Core;
-    using Subscrio.Core.Application.Hooks;
-
-    public static class AuditLogExtensions
-    {
-        public static IDisposable UseCustomAuditLog(this Subscrio subscrio, AuditLogOptions options)
-        {
-            var offs = new List<Action>
-            {
-                subscrio.Hooks.OnCustomerCreatedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnCustomerUpdatedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnCustomerArchivedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnCustomerUnarchivedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnCustomerDeletedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnSubscriptionCreatedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnSubscriptionUpdatedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnSubscriptionArchivedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnSubscriptionUnarchivedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnSubscriptionDeletedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnSubscriptionFeatureOverrideAddedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnSubscriptionFeatureOverrideRemovedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnSubscriptionTemporaryOverridesClearedAfter((e, ct) => options.Sink.WriteAsync(e, ct)),
-                subscrio.Hooks.OnStripeReceivedAfter((e, ct) => options.Sink.WriteStripeAsync(e, ct)),
-            };
-            return new DelegateDisposable(() => offs.ForEach(off => off()));
-        }
-    }
-    ```
-
-### Consumer Install and Usage
-
-=== "TypeScript"
-    ```bash
-    npm install @acme/subscrio-my-extension
-    ```
-
-    ```typescript
-    import { Subscrio } from 'subscrio';
-    import { registerAuditLog } from '@acme/subscrio-my-extension';
-
-    const subscrio = new Subscrio({ database: { connectionString } });
-    registerAuditLog(subscrio, { sink: mySink });
-    ```
-
-=== ".NET"
-    ```bash
-    dotnet add package Acme.Subscrio.MyExtension
-    ```
-
-    ```csharp
-    using Acme.Subscrio.MyExtension;
-
-    using var audit = subscrio.UseCustomAuditLog(new AuditLogOptions { Sink = mySink });
-    ```
-
-### Conventions
-
-- Register hooks only; do not replace repositories or services.
-- Accept options for storage/sink configuration.
-- Prefer `*.after` for audit so rows reflect committed state (including `entityId`).
-- If you register `*.before` and fail-fast, document that a sink outage blocks mutations.
-- If the extension owns storage, manage schema like core (`installSchema` / `verifySchema` / `migrate`) and only when the consumer initializes the extension.
-
-## 5. Custom Sink Example
-
-Goal: append one record per committed mutation (and one per processed Stripe event) with `type`, `source`, `occurredAt`, `entityId` when present, and full `old` / `new` JSON. For the first-party Postgres implementation, use section 3.
-
-### Sink Interface
-
-=== "TypeScript"
-    ```typescript
-    export interface AuditLogRecord {
-      type: string;
-      source?: string;
-      occurredAt: string;
-      entityId?: number | null;
-      old: unknown | null;
-      new: unknown | null;
-      stripeEvent?: unknown;
-    }
-
-    export interface AuditLogSink {
-      write(event: {
-        type: string;
-        source: string;
-        occurredAt: string;
-        entityId: number | null;
-        old: unknown | null;
-        new: unknown | null;
-      }): Promise<void>;
-      writeStripe(event: {
-        type: string;
-        occurredAt: string;
-        data: unknown;
-      }): Promise<void>;
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    public sealed record AuditLogRecord(
-        string Type,
-        string? Source,
-        string OccurredAt,
-        long? EntityId,
-        object? Old,
-        object? New,
-        object? StripeEvent = null
-    );
-
-    public interface IAuditLogSink
-    {
-        Task WriteAsync(CustomerMutationHookEvent evt, CancellationToken cancellationToken = default);
-        Task WriteAsync(SubscriptionMutationHookEvent evt, CancellationToken cancellationToken = default);
-        Task WriteStripeAsync(StripeReceivedHookEvent evt, CancellationToken cancellationToken = default);
-    }
-    ```
-
-### In-Memory Sink (Tests / Demos)
-
-=== "TypeScript"
-    ```typescript
-    export class MemoryAuditSink implements AuditLogSink {
-      readonly records: AuditLogRecord[] = [];
-
-      async write(event) {
-        this.records.push({ ...event });
-      }
-
-      async writeStripe(event) {
-        this.records.push({
-          type: event.type,
-          occurredAt: event.occurredAt,
-          old: null,
-          new: null,
-          stripeEvent: event.data,
-        });
-      }
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    public sealed class MemoryAuditSink : IAuditLogSink
-    {
-        public List<AuditLogRecord> Records { get; } = new();
-
-        public Task WriteAsync(CustomerMutationHookEvent evt, CancellationToken cancellationToken = default)
-        {
-            Records.Add(new AuditLogRecord(evt.Type, evt.Source, evt.OccurredAt, evt.EntityId, evt.Old, evt.New));
-            return Task.CompletedTask;
-        }
-
-        public Task WriteAsync(SubscriptionMutationHookEvent evt, CancellationToken cancellationToken = default)
-        {
-            Records.Add(new AuditLogRecord(evt.Type, evt.Source, evt.OccurredAt, evt.EntityId, evt.Old, evt.New));
-            return Task.CompletedTask;
-        }
-
-        public Task WriteStripeAsync(StripeReceivedHookEvent evt, CancellationToken cancellationToken = default)
-        {
-            Records.Add(new AuditLogRecord(evt.Type, null, evt.OccurredAt, null, null, null, evt.Data));
-            return Task.CompletedTask;
-        }
-    }
-    ```
-
-### Inline App Usage
-
-=== "TypeScript"
-    ```typescript
-    const sink = new MemoryAuditSink(); // or Postgres/file/queue sink
-
-    subscrio.hooks.on(HookEvents.CustomerUpdatedAfter, async (e) => {
-      await sink.write(e);
-    });
-
-    subscrio.hooks.on(HookEvents.StripeReceivedAfter, async (e) => {
-      await sink.writeStripe(e);
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    var sink = new MemoryAuditSink(); // or Postgres/file/queue sink
-
-    subscrio.Hooks.OnCustomerUpdatedAfter(async (e, ct) =>
-    {
-        await sink.WriteAsync(e, ct);
-    });
-
-    subscrio.Hooks.OnStripeReceivedAfter(async (e, ct) =>
-    {
-        await sink.WriteStripeAsync(e, ct);
-    });
-    ```
-
-### Packaged Usage
-
-=== "TypeScript"
-    ```typescript
-    // Custom sink-based extension
-    registerAuditLog(subscrio, { sink });
-
-    // Or first-party Postgres package (section 3)
-    // const audit = createAuditLog(subscrio, { database: { connectionString } });
-    ```
-
-=== ".NET"
-    ```csharp
-    // Custom sink-based extension
-    subscrio.UseCustomAuditLog(new AuditLogOptions { Sink = sink });
-
-    // Or first-party Postgres package (section 3)
-    // await using var audit = subscrio.UseAuditLog(new AuditLogOptions { ConnectionString = cs });
-    ```
-
-### Phase Trade-Offs
-
-- **`*.after` (recommended for audit):** Record reflects committed data and includes `entityId`. If the after-handler throws, the row remains; the API call still fails.
-- **`*.before`:** Useful for validation and enrichment. An audit row can be written even if the later database write fails. Compensating strategies:
-  - Use the same DB transaction only if your sink shares the Subscrio connection (advanced; not provided by Subscrio).
-  - Treat audit as best-effort and reconcile from `old`/`new` plus application logs.
-  - Prefer fail-fast handlers so a sink outage blocks mutations until audit is healthy.
-
-## Related
-
-- [Hooks API reference](./hooks.md)
-- TypeScript audit package: [`subscrio-extensions-audit-log`](https://github.com/subscrio/subscrio-extensions-audit-log/blob/main/typescript/README.md)
-- .NET audit package: [`subscrio-extensions-audit-log`](https://github.com/subscrio/subscrio-extensions-audit-log/blob/main/dotnet/README.md)
-- TypeScript payments package: [`subscrio-extensions-payments`](https://github.com/subscrio/subscrio-extensions-payments/blob/main/typescript/README.md)
-- .NET payments package: [`subscrio-extensions-payments`](https://github.com/subscrio/subscrio-extensions-payments/blob/main/dotnet/README.md)
-- [Customers](./customers.md)
-- [Subscriptions](./subscriptions.md)
-- [Stripe Integration](./stripe-integration.md)
+const audit = createAuditLog(subscrio, {
+  database: { connectionString: process.env.DATABASE_URL! }
+});
+try {
+  await audit.installSchema();
+  await subscrio.customers.updateCustomer('acme', { displayName: 'Acme Ltd' });
+  const page = await audit.list({ customerKey: 'acme', limit: 20 });
+  console.log(page.total);
+} finally {
+  await audit.dispose();
+}
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+```csharp
+using Subscrio.AuditLog;
+using Subscrio.AuditLog.DTOs;
+
+await using var audit = subscrio.UseAuditLog(new AuditLogOptions
+{
+    ConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL")!
+});
+await audit.InstallSchemaAsync();
+await subscrio.Customers.UpdateCustomerAsync("acme", new UpdateCustomerDto(DisplayName: "Acme Ltd"));
+var page = await audit.ListAsync(new TransactionLogFilters { CustomerKey = "acme", Limit = 20 });
+Console.WriteLine(page.Total);
+```
+
+</div>
+
+Keep the audit object alive for the application lifetime that should be observed. The example disposes it after one operation. Install with `npm install subscrio-audit-log` or `dotnet add package Subscrio.AuditLog`.
+
+## Track successful Stripe invoices
+
+The payments extension records `invoice.payment_succeeded` after Stripe processing. It requires a mapped local subscription; unrelated events and invoices that cannot be mapped are skipped. A unique invoice ID prevents duplicate payment rows. It records the provider's paid amount and currency; it does not collect payments, attach packages, or grant credits.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+```typescript
+import { createPaymentTracker } from 'subscrio-payments';
+
+const payments = createPaymentTracker(subscrio, {
+  database: { connectionString: process.env.DATABASE_URL! }
+});
+try {
+  await payments.installSchema();
+  // In a server, keep this tracker alive while handling verified Stripe events.
+  const page = await payments.list({ limit: 20 });
+  console.log(page.total);
+} finally {
+  await payments.dispose();
+}
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+```csharp
+using Subscrio.Payments;
+using Subscrio.Payments.DTOs;
+
+await using var payments = subscrio.UsePayments(new PaymentTrackerOptions
+{
+    ConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL")!
+});
+await payments.InstallSchemaAsync();
+// In a server, keep this tracker alive while handling verified Stripe events.
+var page = await payments.ListAsync(new PaymentFilters { Limit = 20 });
+Console.WriteLine(page.Total);
+```
+
+</div>
+
+Install with `npm install subscrio-payments` or `dotnet add package Subscrio.Payments`. Like the audit extension, both implementations use PostgreSQL and expose separate schema installation, verification, migration, listing, and disposal methods. Construction registers handlers; it does not install tables.
+
+## Package your own extension
+
+Accept a Subscrio instance and explicit options. Register supported hooks, retain their unsubscribe callbacks, and release owned resources on disposal. Declare the compatible core package as a dependency, expose any storage setup explicitly, and document whether a failure can block a mutation or occur after commit.
+
+Use [Stripe Setup](how-to-integrate-with-stripe.md) for signature verification and event delivery. Consult the extension source and package documentation for query filters and stored columns.

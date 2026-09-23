@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "typeRoots": [
+      "../../../core/typescript/node_modules/@types"
+    ],
+    "paths": {
+      "subscrio": [
+        "../../../core/typescript"
+      ],
+      "subscrio/config": [
+        "../../../core/typescript/dist/config"
+      ]
+    }
+  },
+  "include": [
+    "*.ts"
+  ]
+}

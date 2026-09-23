@@ -1,499 +1,176 @@
 ---
-title: Subscription lifecycle
-description: How Subscrio computes pending, trial, active, cancellation_pending, cancelled, and expired from subscription dates in TypeScript and .NET.
+title: Subscription Lifecycle
+description: Understand date precedence, trial outcomes, cancellation, and transitions between plans.
 ---
 
-# Subscription lifecycle
+# Subscription Lifecycle
 
-A subscription's `status` is calculated from its dates each time you read it, so you do not update the status directly. Normal repository reads use the `subscrio.subscription_status_view`. Domain mappings can apply the equivalent in-process calculation when they do not read through the view.
+A subscription's status is calculated from dates; it is not a field you set directly. Billing-period dates and archive state are separate from that status.
 
-This page explains which date wins when several are set, the usual paths between statuses, and how to configure the end of a trial.
-
-!!! note
-    `suspended` is a customer status, not a subscription status. A subscription can be `pending`, `trial`, `active`, `cancellation_pending`, `cancelled`, or `expired`.
+<span id="complete-conditions-after-precedence"></span>
+<span id="precedence-and-boundary-cases"></span>
+<span id="status-definitions"></span>
+<span id="status-flow"></span>
+<span id="flow-access-title"></span>
+<span id="flow-cancel-title"></span>
+<span id="flow-expire-title"></span>
+<span id="find-transitioned-subscriptions"></span>
+<span id="configure-what-happens-after-a-trial"></span>
+<span id="dates-used-by-a-trial"></span>
+<span id="choose-the-outcome"></span>
+<span id="start-billing-after-the-trial"></span>
+<span id="create-the-subscription"></span>
+<span id="state-when-created"></span>
+<span id="state-after-the-trial-ends"></span>
+<span id="move-to-a-free-plan-after-the-trial"></span>
+<span id="configure-the-plan-once"></span>
+<span id="create-the-subscription_1"></span>
+<span id="state-when-created_1"></span>
+<span id="run-the-transition-after-the-trial"></span>
+<span id="result-of-the-transition"></span>
+<span id="end-access-after-the-trial"></span>
+<span id="create-the-subscription_2"></span>
+<span id="state-when-created_2"></span>
+<span id="state-after-the-trial-ends_1"></span>
+<span id="details-worth-checking"></span>
+<span id="common-operations"></span>
+<span id="grant-reconciliation-during-lifecycle-changes"></span>
 
 ## How status is calculated
 
-Subscrio does not calculate each status from one date in isolation. It evaluates an ordered decision tree against the current time and returns as soon as a condition matches. The database views and application fallback implement the same sequence:
+The first matching condition wins. A timestamp equal to the current time is considered reached.
 
-```text
-if cancellationDate is set:
-    if cancellationDate > now: return cancellation_pending
-    otherwise:                 return cancelled
+| Order | Condition | Status |
+| --- | --- | --- |
+| 1 | A cancellation date is set and is still in the future. | `cancellation_pending` |
+| 2 | A cancellation date is set and has been reached. | `cancelled` |
+| 3 | The expiration date has been reached. | `expired` |
+| 4 | The activation date is still in the future. | `pending` |
+| 5 | The trial end date is still in the future. | `trial` |
+| 6 | None of the above. | `active` |
 
-if expirationDate is set and expirationDate <= now:
-    return expired
+Cancellation takes precedence even when another date would imply expiration or trial. `currentPeriodStart`, `currentPeriodEnd`, and `isArchived` do not participate in this status calculation. Creation defaults activation to the current time; provide a future activation date for pending access.
 
-if activationDate is set and activationDate > now:
-    return pending
+Normal reads use a database status view and the database's current time. Feature resolution and accounting use the configured library clock. Keep those clocks consistent; a test clock does not change the database view's time.
 
-if trialEndDate is set and trialEndDate > now:
-    return trial
+## Decide what happens after a trial
 
-return active
+The examples use the customer and billing cycle created in [Getting Started](getting-started.md).
+
+| Intended outcome | Configuration |
+| --- | --- |
+| Continue on the same plan | Set a trial end without an expiration date. Status becomes active when the trial ends. |
+| End the trial's access | Set expiration to the trial end. Status becomes expired. |
+| Replace it with a free plan | Set expiration to the trial end, configure the plan's transition target, and run the transition job. |
+
+This example ends the trial after 14 days:
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+```typescript
+const end = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+await subscrio.subscriptions.createSubscription({
+  key: 'acme-trial', customerKey: 'acme', billingCycleKey: 'starter-monthly',
+  trialEndDate: end.toISOString(), expirationDate: end.toISOString()
+});
 ```
 
-The TypeScript PostgreSQL view compares timestamps with `NOW()`. TypeScript does not run this view on SQL Server. .NET installs a provider-specific view that uses `NOW()` for PostgreSQL or `GETUTCDATE()` for SQL Server. The .NET application fallback captures `DateHelper.Now()` once, which returns `DateTime.UtcNow`, and compares every date with that value.
+</div>
 
-### Complete conditions after precedence
+<div class="language-content" data-lang="net" markdown="1">
 
-The conditions below include the earlier checks that must fail before a status can be returned.
-
-`cancellation_pending`
-: `cancellationDate` is set and is later than the current time. No other date is considered.
-
-`cancelled`
-: `cancellationDate` is set and is equal to or earlier than the current time. No other date is considered.
-
-`expired`
-: `cancellationDate` is not set, and `expirationDate` is set and has been reached.
-
-`pending`
-: `cancellationDate` is not set; `expirationDate` is either not set or is still in the future; and `activationDate` is set and is still in the future.
-
-`trial`
-: `cancellationDate` is not set; `expirationDate` is either not set or is still in the future; `activationDate` is either not set or has been reached; and `trialEndDate` is set and is still in the future.
-
-`active`
-: No earlier rule matches. In full, `cancellationDate` is not set; `expirationDate` is either not set or is still in the future; `activationDate` is either not set or has been reached; and `trialEndDate` is either not set or has been reached.
-
-### Precedence and boundary cases
-
-- Cancellation has the highest priority. Any non-null `cancellationDate` produces either `cancellation_pending` or `cancelled`, even when the subscription has already reached its expiration date.
-- Expiration is checked before activation and trial. A reached `expirationDate` produces `expired` even when `activationDate` or `trialEndDate` is still in the future.
-- Activation is checked before trial. If both dates are in the future, the result is `pending`, not `trial`.
-- A date equal to the current time is considered reached. Equality produces `cancelled` or `expired`; it does not produce `pending` or `trial`.
-- A future `expirationDate` does not create a separate status. The subscription can still be `pending`, `trial`, or `active` until that date is reached.
-
-Only `cancellationDate`, `expirationDate`, `activationDate`, and `trialEndDate` participate in this calculation. `currentPeriodStart`, `currentPeriodEnd`, `isArchived`, `transitionedAt`, Stripe identifiers, metadata, and feature overrides do not affect `status`.
-
-When a subscription is created without an explicit `activationDate`, both SDKs default it to the current time. The new subscription therefore does not start as `pending` unless you provide a future activation date.
-
-## Status definitions
-
-<div class="status-definitions" markdown>
-
-| Status | What it means | Common use |
-| --- | --- | --- |
-| `pending` | Access is scheduled to begin later. | A subscription with a future start date. |
-| `trial` | The trial end date has not been reached. | Temporary access before billing or expiration. |
-| `active` | No higher-priority rule applies. | Normal ongoing access. This can include an expiration date that is still in the future. |
-| `cancellation_pending` | Cancellation is scheduled for a future date. | Keeping access through the end of a paid period after a cancellation request. |
-| `cancelled` | The cancellation date has been reached. | A subscription ended by cancellation. |
-| `expired` | The expiration date has been reached and no cancellation rule applies. | A fixed term ended, or a trial was configured to expire. |
+```csharp
+var end = DateTime.UtcNow.AddDays(14);
+await subscrio.Subscriptions.CreateSubscriptionAsync(new CreateSubscriptionDto(
+    CustomerKey: "acme", BillingCycleKey: "starter-monthly", Key: "acme-trial",
+    TrialEndDate: end, ExpirationDate: end));
+```
 
 </div>
 
-## Status flow
+Becoming active does not initiate a payment. Billing belongs to your application or provider. To make a billing period start after the trial, explicitly set its start and end dates; the default period begins at creation.
 
-The first row shows the usual path into ongoing access. The second and third rows show the two ways a subscription commonly ends. These are examples, not enforced steps: setting a date in the past can move a subscription directly to `cancelled` or `expired`.
-
-<div class="subscription-flow" role="img" aria-label="Common subscription status paths. Pending can lead to trial or active. Trial can lead to active. A subscription can become cancellation pending and then cancelled, or become expired when its expiration date is reached.">
-  <section class="subscription-flow__section" aria-labelledby="flow-access-title">
-    <h3 id="flow-access-title">Starting and continuing access</h3>
-    <div class="subscription-flow__path subscription-flow__path--access">
-      <div class="subscription-flow__status subscription-flow__status--pending">
-        <code>pending</code>
-        <span>Access has not started</span>
-      </div>
-      <div class="subscription-flow__arrow" aria-hidden="true"><span>start date reached</span></div>
-      <div class="subscription-flow__status subscription-flow__status--trial">
-        <code>trial</code>
-        <span>Trial access</span>
-      </div>
-      <div class="subscription-flow__arrow" aria-hidden="true"><span>trial ends</span></div>
-      <div class="subscription-flow__status subscription-flow__status--active">
-        <code>active</code>
-        <span>Ongoing access</span>
-      </div>
-    </div>
-    <p class="subscription-flow__aside"><code>pending</code> may move straight to <code>active</code> when there is no trial.</p>
-  </section>
-
-  <section class="subscription-flow__section" aria-labelledby="flow-cancel-title">
-    <h3 id="flow-cancel-title">Ending by cancellation</h3>
-    <div class="subscription-flow__path subscription-flow__path--ending">
-      <div class="subscription-flow__origin">From any current status</div>
-      <div class="subscription-flow__arrow" aria-hidden="true"><span>set a future cancellation date</span></div>
-      <div class="subscription-flow__status subscription-flow__status--cancellation-pending">
-        <code>cancellation_<wbr>pending</code>
-        <span>Access continues for now</span>
-      </div>
-      <div class="subscription-flow__arrow" aria-hidden="true"><span>date reached</span></div>
-      <div class="subscription-flow__status subscription-flow__status--cancelled">
-        <code>cancelled</code>
-        <span>Cancellation is final</span>
-      </div>
-    </div>
-  </section>
-
-  <section class="subscription-flow__section" aria-labelledby="flow-expire-title">
-    <h3 id="flow-expire-title">Ending by expiration</h3>
-    <div class="subscription-flow__path subscription-flow__path--expiration">
-      <div class="subscription-flow__origin">From any current status</div>
-      <div class="subscription-flow__arrow" aria-hidden="true"><span>expiration date reached</span></div>
-      <div class="subscription-flow__status subscription-flow__status--expired">
-        <code>expired</code>
-        <span>The fixed term has ended</span>
-      </div>
-    </div>
-  </section>
-</div>
-
-Removing or changing a date can make the calculated status move back to an earlier state. For example, clearing a future `cancellationDate` returns the subscription to the status determined by its activation, trial, and expiration dates.
+To end a trial early, update the subscription with `clearTrialEndDate: true` / `ClearTrialEndDate: true`. This removes the trial end date; it does not remove an expiration date you previously set.
 
 ## Moving an expired subscription to another plan
 
-An expired subscription can move automatically to another billing cycle. This is useful when a paid trial should fall back to a free plan. Set `onExpireTransitionToBillingCycleKey` on the current plan, then run `transitionExpiredSubscriptions()` in TypeScript or `TransitionExpiredSubscriptionsAsync()` in .NET.
-
-The transition job:
-
-1. Finds expired subscriptions whose plans have a transition target.
-2. Builds and persists a replacement subscription for the target billing cycle, using a versioned key such as `original-key-v1` or `original-key-v2`.
-3. Archives the old subscription and records the time in `transitioned_at` only after the replacement is saved.
-
-The new subscription keeps the old metadata but not its feature overrides. The original Stripe subscription ID stays on the archived record for historical reference.
-
-### Find transitioned subscriptions
-
-To find all subscriptions that were transitioned:
-
-=== "TypeScript"
-    ```sql
-    SELECT * FROM subscrio.subscriptions 
-    WHERE transitioned_at IS NOT NULL;
-    ```
-
-=== ".NET"
-    ```sql
-    SELECT * FROM subscrio.subscriptions 
-    WHERE transitioned_at IS NOT NULL;
-    ```
-
-Add a date range to the query when you need to audit a particular period.
-
-## Configure what happens after a trial
-
-Before creating a trial subscription, decide what the customer should receive when the trial ends. The dates you set determine whether paid access begins, the customer moves to a free plan, or access ends.
-
-### Dates used by a trial
-
-- `trialEndDate` keeps the subscription in `trial` until that time, unless a higher-priority rule applies.
-- `expirationDate` ends access. Set it to the trial end time when the subscription should expire with the trial.
-- `currentPeriodStart` and `currentPeriodEnd` describe the billing period. Set `currentPeriodStart` to the trial end time when the first paid period should begin then.
-
-### Choose the outcome
-
-| Desired outcome | `trialEndDate` | `expirationDate` | Plan transition | Result after the trial |
-|----------|----------------|------------------|------------------|------------------|
-| Start billing | Future date | Not set | None | The existing subscription becomes `active`. |
-| Move to a free plan | Future date | Same as `trialEndDate` | Set `onExpireTransitionToBillingCycleKey` | The existing subscription expires, and the transition job creates the free subscription. |
-| End access | Future date | Same as `trialEndDate` | None | The subscription becomes `expired`. |
-
-### Start billing after the trial
-
-Use this setup for a paid subscription that should continue after its trial. Do not set `expirationDate`. At the trial end time, the calculated status changes from `trial` to `active`.
-
-#### Create the subscription
-
-=== "TypeScript"
-    ```typescript
-    // Calculate trial end date (7 days from now)
-    const trialEndDate = new Date();
-    trialEndDate.setDate(trialEndDate.getDate() + 7);
-
-    // Create subscription
-    const subscription = await subscrio.subscriptions.createSubscription({
-      key: 'customer-123-pro-subscription',
-      customerKey: 'customer-123',
-      billingCycleKey: 'pro-monthly',
-      trialEndDate: trialEndDate.toISOString(),
-      currentPeriodStart: trialEndDate.toISOString(),
-      // expirationDate is NOT set - billing will start after trial
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    // Calculate trial end date (7 days from now)
-    var trialEndDate = DateTime.UtcNow.AddDays(7);
-
-    // Create subscription
-    var subscription = await subscrio.Subscriptions.CreateSubscriptionAsync(new CreateSubscriptionDto(
-        Key: "customer-123-pro-subscription",
-        CustomerKey: "customer-123",
-        BillingCycleKey: "pro-monthly",
-        TrialEndDate: trialEndDate,
-        CurrentPeriodStart: trialEndDate
-        // ExpirationDate is NOT set - billing will start after trial
-    ));
-    ```
-
-#### State when created
-
-=== "TypeScript"
-    ```typescript
-    {
-      trialEndDate: "2025-01-27T00:00:00Z",      // 7 days from now
-      expirationDate: null,                      // NOT set
-      currentPeriodStart: "2025-01-27T00:00:00Z", // Same as trialEndDate (billing starts when trial ends)
-      currentPeriodEnd: "2025-02-27T00:00:00Z",   // currentPeriodStart + 1 month
-      activationDate: "2025-01-20T00:00:00Z",    // Now
-      status: "trial"                             // Because trialEndDate > NOW()
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    // SubscriptionDto shape (equivalent structure):
-    // TrialEndDate: "2025-01-27T00:00:00Z", ExpirationDate: null,
-    // CurrentPeriodStart: "2025-01-27T00:00:00Z", CurrentPeriodEnd: "2025-02-27T00:00:00Z",
-    // ActivationDate: "2025-01-20T00:00:00Z", Status: "trial"
-    ```
-
-#### State after the trial ends
-
-=== "TypeScript"
-    ```typescript
-    {
-      trialEndDate: "2025-01-27T00:00:00Z",      // Still set (historical record)
-      expirationDate: null,                       // Still not set
-      currentPeriodStart: "2025-01-27T00:00:00Z", // Billing period started
-      currentPeriodEnd: "2025-02-27T00:00:00Z",   // First billing period ends
-      status: "active"                            // trialEndDate <= NOW(), no expiration
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    // SubscriptionDto shape: TrialEndDate, ExpirationDate: null,
-    // CurrentPeriodStart, CurrentPeriodEnd, Status: "active"
-    ```
-
-The subscription is now in its first paid billing period. Charging the customer is the responsibility of your billing integration.
-
----
-
-### Move to a free plan after the trial
-
-Use this setup when the trial should expire and a transition job should create a replacement subscription on a free plan.
-
-#### Configure the plan once
-
-Set the paid plan's transition target to a billing cycle on the free plan:
-
-=== "TypeScript"
-    ```typescript
-    // Create or update the paid plan to specify transition target
-    const paidPlan = await subscrio.plans.createPlan({
-      productKey: 'my-product',
-      key: 'pro-plan',
-      displayName: 'Pro Plan',
-      onExpireTransitionToBillingCycleKey: 'free-monthly'
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    // Create plan with transition target, or update existing plan:
-    var paidPlan = await subscrio.Plans.CreatePlanAsync(new CreatePlanDto(
-        ProductKey: "my-product",
-        Key: "pro-plan",
-        DisplayName: "Pro Plan",
-        OnExpireTransitionToBillingCycleKey: "free-monthly"
-    ));
-    // Or: await subscrio.Plans.UpdatePlanAsync("pro-plan", new UpdatePlanDto(OnExpireTransitionToBillingCycleKey: "free-monthly"));
-    ```
-
-!!! note
-    `onExpireTransitionToBillingCycleKey` belongs to the plan. The target billing cycle, such as `free-monthly`, must already exist.
-
-#### Create the subscription
-
-=== "TypeScript"
-    ```typescript
-    // Calculate trial end date (14 days from now)
-    const trialEndDate = new Date();
-    trialEndDate.setDate(trialEndDate.getDate() + 14);
-
-    const subscription = await subscrio.subscriptions.createSubscription({
-      key: 'customer-123-pro-trial',
-      customerKey: 'customer-123',
-      billingCycleKey: 'pro-monthly',
-      trialEndDate: trialEndDate.toISOString(),
-      expirationDate: trialEndDate.toISOString(), // Same as trialEndDate - expires when trial ends
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    // Calculate trial end date (14 days from now)
-    var trialEndDate = DateTime.UtcNow.AddDays(14);
-
-    var subscription = await subscrio.Subscriptions.CreateSubscriptionAsync(new CreateSubscriptionDto(
-        Key: "customer-123-pro-trial",
-        CustomerKey: "customer-123",
-        BillingCycleKey: "pro-monthly",
-        TrialEndDate: trialEndDate,
-        ExpirationDate: trialEndDate  // Same as trialEndDate - expires when trial ends
-    ));
-    ```
-
-#### State when created
-
-=== "TypeScript"
-    ```typescript
-    {
-      trialEndDate: "2025-02-03T00:00:00Z",      // 14 days from now
-      expirationDate: "2025-02-03T00:00:00Z",    // Same as trialEndDate
-      currentPeriodStart: "<now unless you pass currentPeriodStart>",
-      currentPeriodEnd: "<currentPeriodStart + billing cycle>",
-      status: "trial"                             // trialEndDate > NOW()
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    // SubscriptionDto: TrialEndDate, ExpirationDate (same), CurrentPeriodStart, CurrentPeriodEnd, Status: "trial"
-    ```
-
-#### Run the transition after the trial
-
-Once `expirationDate` is reached, the subscription becomes `expired`. Run the transition job on a schedule to create the free subscription:
-
-=== "TypeScript"
-    ```typescript
-    // Run this periodically (e.g., via cron job) to process expired subscriptions
-    const report = await subscrio.subscriptions.transitionExpiredSubscriptions();
-
-    console.log(`Processed: ${report.processed}`);
-    console.log(`Transitioned: ${report.transitioned}`);
-    console.log(`Errors: ${report.errors.length}`);
-    ```
-
-=== ".NET"
-    ```csharp
-    // Run this periodically (e.g., via cron job) to process expired subscriptions
-    var report = await subscrio.Subscriptions.TransitionExpiredSubscriptionsAsync();
-
-    Console.WriteLine($"Processed: {report.Processed}");
-    Console.WriteLine($"Transitioned: {report.Transitioned}");
-    Console.WriteLine($"Errors: {report.Errors.Count}");
-    ```
-
-#### Result of the transition
-
-The job creates the replacement first. After that save succeeds, it archives the trial subscription and sets its `transitioned_at` timestamp. The new key is versioned from `customer-123-pro-trial` to `customer-123-pro-trial-v1`. Metadata carries over, but feature overrides do not. The old Stripe subscription ID remains on the archived record.
-
-The replacement subscription looks like this:
-
-=== "TypeScript"
-    ```typescript
-    {
-      key: "customer-123-pro-trial-v1",
-      billingCycleKey: "free-monthly", // Transitioned to free plan
-      trialEndDate: null,               // No trial on free plan
-      expirationDate: null,              // Free plan doesn't expire
-      status: "active"                   // Immediately active
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    // SubscriptionDto: Key: "customer-123-pro-trial-v1", BillingCycleKey: "free-monthly",
-    // TrialEndDate: null, ExpirationDate: null, Status: "active"
-    ```
-
----
-
-### End access after the trial
-
-Use this setup when the subscription should simply expire at the end of the trial. Set `expirationDate` to the same time as `trialEndDate`, and leave the plan transition target unset.
-
-#### Create the subscription
-
-=== "TypeScript"
-    ```typescript
-    // Calculate trial end date (7 days from now)
-    const trialEndDate = new Date();
-    trialEndDate.setDate(trialEndDate.getDate() + 7);
-
-    const subscription = await subscrio.subscriptions.createSubscription({
-      key: 'customer-123-trial-only',
-      customerKey: 'customer-123',
-      billingCycleKey: 'premium-monthly',
-      trialEndDate: trialEndDate.toISOString(),
-      expirationDate: trialEndDate.toISOString(), // Same as trialEndDate - expires when trial ends
-      // Plan does NOT have onExpireTransitionToBillingCycleKey set
-    });
-    ```
-
-=== ".NET"
-    ```csharp
-    // Calculate trial end date (7 days from now)
-    var trialEndDate = DateTime.UtcNow.AddDays(7);
-
-    var subscription = await subscrio.Subscriptions.CreateSubscriptionAsync(new CreateSubscriptionDto(
-        Key: "customer-123-trial-only",
-        CustomerKey: "customer-123",
-        BillingCycleKey: "premium-monthly",
-        TrialEndDate: trialEndDate,
-        ExpirationDate: trialEndDate  // Same as trialEndDate - expires when trial ends
-        // Plan does NOT have OnExpireTransitionToBillingCycleKey set
-    ));
-    ```
-
-#### State when created
-
-=== "TypeScript"
-    ```typescript
-    {
-      trialEndDate: "2025-01-27T00:00:00Z",      // 7 days from now
-      expirationDate: "2025-01-27T00:00:00Z",    // Same as trialEndDate
-      currentPeriodStart: "<now unless you pass currentPeriodStart>",
-      currentPeriodEnd: "<currentPeriodStart + billing cycle>",
-      status: "trial"                             // trialEndDate > NOW()
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    // SubscriptionDto: TrialEndDate, ExpirationDate (same), CurrentPeriodStart, CurrentPeriodEnd, Status: "trial"
-    ```
-
-#### State after the trial ends
-
-=== "TypeScript"
-    ```typescript
-    {
-      trialEndDate: "2025-01-27T00:00:00Z",      // Historical record
-      expirationDate: "2025-01-27T00:00:00Z",    // Now in the past
-      status: "expired"                          // expirationDate <= NOW()
-    }
-    ```
-
-=== ".NET"
-    ```csharp
-    // SubscriptionDto: TrialEndDate, ExpirationDate (historical), Status: "expired"
-    ```
-
-The record remains in the database for history, but its status is `expired` and the feature checker grants no access from it.
-
----
-
-### Details worth checking
-
-- If you omit `currentPeriodStart`, the create operation sets it to the current time, not the trial end time.
-- If you omit `currentPeriodEnd`, Subscrio calculates it from the period start and the billing cycle duration. Forever cycles have no period end.
-- Stripe webhooks usually supply the authoritative billing period dates. Update the subscription from those events.
-- A plan transition does not run by itself. Schedule `transitionExpiredSubscriptions()` or `TransitionExpiredSubscriptionsAsync()`.
-- When `trialEndDate` and `expirationDate` are the same future time, the subscription is `trial` until that instant and `expired` afterward.
-
-## Common operations
-
-- To leave a trial immediately, call the update method with `clearTrialEndDate: true` or `ClearTrialEndDate: true`. You can also replace the trial end with a past date.
-- To cancel at the end of the current period, set `cancellationDate` to that period's end. The subscription remains accessible as `cancellation_pending` until then.
-- The current update DTOs cannot explicitly clear `cancellationDate`. If your application must undo a scheduled cancellation, handle that limitation in its data workflow until a clear flag is added to the public API.
-- Subscription APIs do not include `suspend()` or `resume()`. `suspended` applies to customers instead.
-
-Refer back to [Subscriptions](subscriptions.md) for lifecycle-related APIs (`archiveSubscription`, `unarchiveSubscription`, `clearTemporaryOverrides`, `transitionExpiredSubscriptions`), and to [Feature Checker](feature-checker.md) for how these statuses affect runtime feature access.
+Create the target billing cycle before assigning it to the current plan. The target must belong to the same product. This setting affects all subscriptions on that plan when they expire.
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+```typescript
+await subscrio.plans.createPlan({
+  key: 'free', productKey: 'projecthub', displayName: 'Free'
+});
+await subscrio.billingCycles.createBillingCycle({
+  key: 'free-forever', planKey: 'free', displayName: 'No renewal', durationUnit: 'forever'
+});
+await subscrio.plans.updatePlan('starter', {
+  onExpireTransitionToBillingCycleKey: 'free-forever'
+});
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+```csharp
+await subscrio.Plans.CreatePlanAsync(new CreatePlanDto("projecthub", "free", "Free"));
+await subscrio.BillingCycles.CreateBillingCycleAsync(new CreateBillingCycleDto(
+    PlanKey: "free", Key: "free-forever", DisplayName: "No renewal", DurationUnit: "forever"));
+await subscrio.Plans.UpdatePlanAsync("starter", new UpdatePlanDto(
+    OnExpireTransitionToBillingCycleKey: "free-forever"));
+```
+
+</div>
+
+Run the following operation periodically from your application's scheduler:
+
+<div class="language-content" data-lang="ts" markdown="1">
+
+```typescript
+const report = await subscrio.subscriptions.transitionExpiredSubscriptions();
+console.log(report.processed, report.transitioned, report.errors);
+```
+
+</div>
+
+<div class="language-content" data-lang="net" markdown="1">
+
+```csharp
+var report = await subscrio.Subscriptions.TransitionExpiredSubscriptionsAsync();
+Console.WriteLine($"Processed: {report.Processed}; transitioned: {report.Transitioned}");
+foreach (var error in report.Errors) Console.WriteLine(error);
+```
+
+</div>
+
+Each call considers up to 1,000 eligible expired subscriptions. The library saves a replacement with a versioned key, then archives the original and records its transition time. The replacement keeps metadata, but does not copy feature overrides, add-on attachments, or the Stripe subscription ID. Credit grants already issued remain in their original accounting history.
+
+The replacement and archive writes are not one transaction. Inspect report errors and reconcile partial failures before retrying blindly. Cancellation is not expiration and does not use this transition path.
+
+## Cancellation and access
+
+A future cancellation date immediately produces `cancellation_pending`. Whether access continues depends on the operation:
+
+- Default customer feature selection excludes subscriptions with any cancellation date.
+- Customer feature resolution with an explicit subscription rule and metered accounting accept a future cancellation until its timestamp.
+- Subscription-specific feature getters resolve values without checking lifecycle eligibility.
+
+Do not equate a returned value or the status name with a complete authorization decision. See [How Feature Values Are Calculated](feature-resolution.md#which-subscriptions-contribute) for the selection rules.
+
+The current subscription update DTO cannot clear a cancellation or expiration date. Omitting the property or passing `null` leaves its existing value unchanged, so do not use either as an undo operation.
+
+Automatic credit grants start after trials and stop when a subscription becomes ineligible. Cancellation retains issued credits by default; an `expire` grant policy expires the affected subscription's grants. Unrelated prepaid balances remain available.
+
+## Billing periods and renewal
+
+Reaching the current period's end does not itself expire or renew the subscription. Your integration must update its period dates. Billing-period meters reject stale boundaries instead of silently starting a new allowance. Scheduled credit issuance also depends on the configured cadence and current subscription dates.
+
+Changing a subscription's billing cycle changes its plan relationship but does not automatically recalculate its period. Send the intended period dates with a plan change. Temporary overrides persist until your application clears them; neither passing time nor the current Stripe invoice handler clears them automatically.
+
+## Archive and removal
+
+Archiving prevents ordinary subscription updates and excludes the subscription from accounting and explicit-rule customer checks. It does not change the calculated date status, and default customer selection does not exclude archive state. Restore before updating an archived subscription.
+
+Deletion is permanent and may be blocked by retained accounting or attachment records. Prefer preserving an ended subscription when its history is needed. See [Relationships](relationships.md#history-and-deletion) and [Subscriptions](subscriptions.md).

@@ -1,0 +1,97 @@
+{
+  "version": "1.0",
+  "features": [
+    {
+      "key": "requests",
+      "displayName": "API requests",
+      "valueType": "metered",
+      "defaultValue": "0",
+      "meteredConfig": {
+        "resetPeriod": "monthly",
+        "usageScope": "customer",
+        "enforcement": "hard",
+        "aggregation": "sum"
+      }
+    },
+    {
+      "key": "render",
+      "displayName": "Image rendering",
+      "valueType": "toggle",
+      "defaultValue": "false"
+    },
+    {
+      "key": "seats",
+      "displayName": "Seats",
+      "valueType": "numeric",
+      "defaultValue": "0"
+    }
+  ],
+  "creditCurrencies": [
+    {
+      "key": "ai-credits",
+      "displayName": "AI credits"
+    }
+  ],
+  "creditConsumptionRules": [
+    {
+      "featureKey": "render",
+      "currencyKey": "ai-credits",
+      "creditsPerUnit": 50
+    }
+  ],
+  "products": [
+    {
+      "key": "studio",
+      "displayName": "Creative studio",
+      "features": [
+        "requests",
+        "render",
+        "seats"
+      ],
+      "featureResolution": {
+        "seats": {
+          "subscriptionRule": "most_generous",
+          "addonRule": "additive"
+        }
+      },
+      "addons": [
+        {
+          "key": "seat-pack",
+          "displayName": "Extra seats",
+          "compositionMode": "additive",
+          "featureValues": {
+            "seats": "3"
+          }
+        }
+      ],
+      "plans": [
+        {
+          "key": "pro",
+          "displayName": "Pro",
+          "featureValues": {
+            "requests": "10000",
+            "render": "true",
+            "seats": "5"
+          },
+          "creditGrants": [
+            {
+              "currencyKey": "ai-credits",
+              "amount": 5000,
+              "cadence": "monthly",
+              "expiryPolicy": "grant_period_end",
+              "cancellationPolicy": "retain"
+            }
+          ],
+          "billingCycles": [
+            {
+              "key": "pro-monthly",
+              "displayName": "Monthly",
+              "durationUnit": "months",
+              "durationValue": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
